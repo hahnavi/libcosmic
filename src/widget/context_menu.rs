@@ -33,6 +33,9 @@ pub fn context_menu<'a, Message: 'static + Clone>(
         }),
         close_on_escape: true,
         window_id: window::Id::RESERVED,
+        item_width: ItemWidth::Uniform(240),
+        on_open: None,
+        on_close: None,
         on_surface_action: None,
     };
 
@@ -53,12 +56,33 @@ pub struct ContextMenu<'a, Message> {
     context_menu: Option<Vec<menu::Tree<Message>>>,
     pub window_id: window::Id,
     pub close_on_escape: bool,
+    /// Width of each menu item, and therefore of the menu.
+    pub item_width: ItemWidth,
+    /// Emitted when the menu opens, so the application can mark what was right-clicked.
+    #[setters(strip_option)]
+    pub on_open: Option<Message>,
+    /// Emitted when the menu closes by any path, including the compositor dismissing it.
+    #[setters(strip_option)]
+    pub on_close: Option<Message>,
     #[setters(skip)]
     pub(crate) on_surface_action:
-        Option<Arc<dyn Fn(crate::surface::Action) -> Message + Send + Sync + 'static>>,
+        Option<Arc<dyn Fn(crate::surface::Action<Message>) -> Message + Send + Sync + 'static>>,
 }
 
 impl<Message: Clone + 'static> ContextMenu<'_, Message> {
+    /// Publish `on_open`/`on_close` when the open state changed since the last report.
+    fn report_open_state(&self, state: &mut LocalState, shell: &mut iced_core::Shell<'_, Message>) {
+        let open = state.menu_bar_state.inner.with_data(|d| d.open);
+        if open == state.reported_open {
+            return;
+        }
+        state.reported_open = open;
+        let message = if open { &self.on_open } else { &self.on_close };
+        if let Some(message) = message.clone() {
+            shell.publish(message);
+        }
+    }
+
     #[cfg(wayland_platform)]
     #[allow(clippy::too_many_lines)]
     fn create_popup(
@@ -91,16 +115,12 @@ impl<Message: Clone + 'static> ContextMenu<'_, Message> {
 
                     shell.publish(self.on_surface_action.as_ref().unwrap()(destroy_popup(id)));
                     state.view_cursor = view_cursor;
-                    (
-                        id,
-                        layout.children().map(|lo| lo.bounds()).collect::<Vec<_>>(),
-                    )
-                } else {
-                    (
-                        window::Id::unique(),
-                        layout.children().map(|lo| lo.bounds()).collect(),
-                    )
                 }
+                // A fresh id per popup, so the old popup's Done cannot be mistaken for the new one's
+                (
+                    window::Id::unique(),
+                    layout.children().map(|lo| lo.bounds()).collect::<Vec<_>>(),
+                )
             });
             let Some(context_menu) = self.context_menu.as_mut() else {
                 return;
@@ -116,7 +136,7 @@ impl<Message: Clone + 'static> ContextMenu<'_, Message> {
                     click_outside: true,
                     click_inside: true,
                 },
-                item_width: ItemWidth::Uniform(240),
+                item_width: self.item_width,
                 item_height: ItemHeight::Dynamic(40),
                 bar_bounds: bounds,
                 main_offset: -(bounds.height as i32),
@@ -215,7 +235,7 @@ impl<Message: Clone + 'static> ContextMenu<'_, Message> {
 
     pub fn on_surface_action(
         mut self,
-        handler: impl Fn(crate::surface::Action) -> Message + Send + Sync + 'static,
+        handler: impl Fn(crate::surface::Action<Message>) -> Message + Send + Sync + 'static,
     ) -> Self {
         self.on_surface_action = Some(Arc::new(handler));
         self
@@ -235,6 +255,7 @@ impl<Message: 'static + Clone> Widget<Message, crate::Theme, crate::Renderer>
             context_cursor: Point::default(),
             fingers_pressed: Default::default(),
             menu_bar_state: Default::default(),
+            reported_open: false,
         })
     }
 
@@ -269,9 +290,11 @@ impl<Message: 'static + Clone> Widget<Message, crate::Theme, crate::Renderer>
     fn diff(&mut self, tree: &mut Tree) {
         tree.diff_children(std::slice::from_mut(&mut self.content));
         let state = tree.state.downcast_mut::<LocalState>();
-        state.menu_bar_state.inner.with_data_mut(|inner| {
-            menu_roots_diff(self.context_menu.as_mut().unwrap(), &mut inner.tree);
-        });
+        if let Some(context_menu) = self.context_menu.as_mut() {
+            state.menu_bar_state.inner.with_data_mut(|inner| {
+                menu_roots_diff(context_menu, &mut inner.tree);
+            });
+        }
 
         // if let Some(ref mut context_menus) = self.context_menu {
         //     for (menu, tree) in context_menus
@@ -319,6 +342,38 @@ impl<Message: 'static + Clone> Widget<Message, crate::Theme, crate::Renderer>
         );
     }
 
+    fn mouse_interaction(
+        &self,
+        tree: &Tree,
+        layout: iced_core::Layout<'_>,
+        cursor: iced_core::mouse::Cursor,
+        viewport: &iced::Rectangle,
+        renderer: &crate::Renderer,
+    ) -> mouse::Interaction {
+        self.content.as_widget().mouse_interaction(
+            &tree.children[0],
+            layout,
+            cursor,
+            viewport,
+            renderer,
+        )
+    }
+
+    fn drag_destinations(
+        &self,
+        tree: &Tree,
+        layout: iced_core::Layout<'_>,
+        renderer: &crate::Renderer,
+        dnd_rectangles: &mut iced_core::clipboard::DndDestinationRectangles,
+    ) {
+        self.content.as_widget().drag_destinations(
+            &tree.children[0],
+            layout,
+            renderer,
+            dnd_rectangles,
+        );
+    }
+
     fn operate(
         &mut self,
         tree: &mut Tree,
@@ -345,6 +400,20 @@ impl<Message: 'static + Clone> Widget<Message, crate::Theme, crate::Renderer>
     ) {
         let state = tree.state.downcast_mut::<LocalState>();
         let bounds = layout.bounds();
+
+        // The compositor dismissed our popup: nothing else tells this state about it.
+        #[cfg(wayland_platform)]
+        if let iced::Event::PlatformSpecific(iced::event::PlatformSpecific::Wayland(
+            iced::event::wayland::Event::Popup(iced::event::wayland::PopupEvent::Done, _, popup),
+        )) = event
+        {
+            state.menu_bar_state.inner.with_data_mut(|d| {
+                if d.popup_id.get(&self.window_id) == Some(popup) {
+                    d.popup_id.remove(&self.window_id);
+                    d.reset();
+                }
+            });
+        }
 
         // XXX this should reset the state if there are no other copies of the state, which implies no dropdown menus open.
         let reset = self.window_id != window::Id::NONE
@@ -425,7 +494,9 @@ impl<Message: 'static + Clone> Widget<Message, crate::Theme, crate::Renderer>
                     self.create_popup(layout, cursor, renderer, shell, viewport, state);
                 }
 
+                shell.request_redraw();
                 shell.capture_event();
+                self.report_open_state(tree.state.downcast_mut::<LocalState>(), shell);
                 return;
             } else if !was_open && right_button_released(event)
                 || (touch_lifted(event))
@@ -461,62 +532,76 @@ impl<Message: 'static + Clone> Widget<Message, crate::Theme, crate::Renderer>
             shell,
             viewport,
         );
+        self.report_open_state(tree.state.downcast_mut::<LocalState>(), shell);
     }
 
     fn overlay<'b>(
         &'b mut self,
         tree: &'b mut Tree,
-        layout: iced_core::Layout<'_>,
-        _renderer: &crate::Renderer,
-        _viewport: &iced::Rectangle,
+        layout: iced_core::Layout<'b>,
+        renderer: &crate::Renderer,
+        viewport: &iced::Rectangle,
         translation: Vector,
     ) -> Option<iced_core::overlay::Element<'b, Message, crate::Theme, crate::Renderer>> {
+        // The wrapped content's overlays (tooltips, dropdowns, ...) always pass through
+        let content = self.content.as_widget_mut().overlay(
+            &mut tree.children[0],
+            layout,
+            renderer,
+            viewport,
+            translation,
+        );
+
         #[cfg(wayland_platform)]
         if matches!(WINDOWING_SYSTEM.get(), Some(WindowingSystem::Wayland))
             && self.window_id != window::Id::NONE
             && self.on_surface_action.is_some()
         {
-            return None;
+            return content;
         }
 
         let state = tree.state.downcast_ref::<LocalState>();
-
-        let context_menu = self.context_menu.as_mut()?;
-
+        let Some(context_menu) = self.context_menu.as_mut() else {
+            return content;
+        };
         if !state.menu_bar_state.inner.with_data(|state| state.open) {
-            return None;
+            return content;
         }
 
-        let mut bounds = layout.bounds();
-        bounds.x = state.context_cursor.x;
-        bounds.y = state.context_cursor.y;
-        Some(
-            crate::widget::menu::Menu {
-                tree: state.menu_bar_state.clone(),
-                menu_roots: std::borrow::Cow::Owned(context_menu.clone()),
-                bounds_expand: 16,
-                menu_overlays_parent: true,
-                close_condition: CloseCondition {
-                    leave: false,
-                    click_outside: true,
-                    click_inside: true,
-                },
-                item_width: ItemWidth::Uniform(240),
-                item_height: ItemHeight::Dynamic(40),
-                bar_bounds: bounds,
-                main_offset: -(bounds.height as i32),
-                cross_offset: 0,
-                root_bounds_list: vec![bounds],
-                path_highlight: Some(PathHighlight::MenuActive),
-                style: std::borrow::Cow::Borrowed(&crate::theme::menu_bar::MenuBarStyle::Default),
-                position: Point::new(translation.x, translation.y),
-                is_overlay: true,
-                window_id: window::Id::NONE,
-                depth: 0,
-                on_surface_action: None,
+        // Anchor the menu to a 1x1 rectangle at the click, like the popup path does
+        let bounds = iced::Rectangle::new(state.context_cursor, Size::new(1.0, 1.0));
+        let menu = crate::widget::menu::Menu {
+            tree: state.menu_bar_state.clone(),
+            menu_roots: std::borrow::Cow::Owned(context_menu.clone()),
+            bounds_expand: 16,
+            menu_overlays_parent: true,
+            close_condition: CloseCondition {
+                leave: false,
+                click_outside: true,
+                click_inside: true,
+            },
+            item_width: self.item_width,
+            item_height: ItemHeight::Dynamic(40),
+            bar_bounds: bounds,
+            main_offset: 0,
+            cross_offset: 0,
+            root_bounds_list: vec![bounds],
+            path_highlight: Some(PathHighlight::MenuActive),
+            style: std::borrow::Cow::Borrowed(&crate::theme::menu_bar::MenuBarStyle::Default),
+            position: Point::new(translation.x, translation.y),
+            is_overlay: true,
+            window_id: window::Id::NONE,
+            depth: 0,
+            on_surface_action: None,
+        }
+        .overlay();
+
+        Some(match content {
+            Some(content) => {
+                iced_core::overlay::Group::with_children(vec![content, menu]).overlay()
             }
-            .overlay(),
-        )
+            None => menu,
+        })
     }
 
     #[cfg(feature = "a11y")]
@@ -560,4 +645,5 @@ pub struct LocalState {
     context_cursor: Point,
     fingers_pressed: HashSet<Finger>,
     menu_bar_state: MenuBarState,
+    reported_open: bool,
 }
