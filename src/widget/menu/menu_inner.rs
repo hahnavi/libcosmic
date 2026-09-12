@@ -2,9 +2,11 @@
 
 //! Menu tree overlay
 use std::borrow::Cow;
+#[cfg(wayland_platform)]
+use std::collections::HashSet;
 use std::sync::Arc;
 
-use super::menu_bar::MenuBarState;
+use super::menu_bar::{MenuBarState, MenuBarStateInner};
 use super::menu_tree::MenuTree;
 #[cfg(wayland_platform)]
 use crate::app::cosmic::{WINDOWING_SYSTEM, WindowingSystem};
@@ -16,8 +18,8 @@ use iced_widget::core::layout::{Limits, Node};
 use iced_widget::core::mouse::{self, Cursor};
 use iced_widget::core::widget::Tree;
 use iced_widget::core::{
-    Clipboard, Layout, Length, Padding, Point, Rectangle, Shell, Size, Vector, event, overlay,
-    renderer, touch,
+    Clipboard, Layout, Length, Padding, Point, Rectangle, Shell, Size, Vector, event, keyboard,
+    overlay, renderer, touch,
 };
 
 /// The condition of when to close a menu
@@ -546,6 +548,28 @@ impl<'b, Message: Clone + 'static> Menu<'b, Message> {
         })
     }
 
+    /// Closes all menus in this menu chain, destroying the root popup.
+    fn close_menus(&mut self, shell: &mut Shell<'_, Message>, view_cursor: Cursor) {
+        self.tree.inner.with_data_mut(|data| {
+            data.reset();
+            data.view_cursor = view_cursor;
+
+            // Destroy the root popup of the menu bar; the compositor dismisses
+            // its descendants with it. Keep the popup mappings in place so the
+            // synthetic `PopupEvent::Done` events are matched by the parent
+            // widgets, which clear any state they keep for the popup.
+            #[cfg(wayland_platform)]
+            if matches!(WINDOWING_SYSTEM.get(), Some(WindowingSystem::Wayland))
+                && let Some(handler) = self.on_surface_action.as_ref()
+                && let Some(root) = root_popup(data)
+            {
+                shell.publish((handler)(crate::surface::action::destroy_popup(root)));
+            }
+        });
+
+        shell.request_redraw();
+    }
+
     #[allow(clippy::too_many_lines)]
     fn update(
         &mut self,
@@ -567,6 +591,38 @@ impl<'b, Message: Clone + 'static> Menu<'b, Message> {
             .inner
             .with_data(|data| data.open || data.active_root.len() <= self.depth)
         {
+            return None;
+        }
+
+        // Close all menus when `Escape` is pressed.
+        if let event::Event::Keyboard(keyboard::Event::KeyPressed {
+            key: keyboard::Key::Named(keyboard::key::Named::Escape),
+            ..
+        }) = event
+            && self.tree.inner.with_data(|data| data.open)
+        {
+            self.close_menus(shell, view_cursor);
+            shell.capture_event();
+            return None;
+        }
+
+        // Some compositors (e.g. cosmic-comp) intercept Escape while a popup
+        // has a keyboard grab, release the grab and never forward the key to
+        // the client. The popup only observes that it lost keyboard focus, so
+        // close the menus when the root popup loses focus. Nested popups are
+        // ignored, as the root popup keeps the keyboard focus while they are
+        // open (nested popups do not take a grab).
+        #[cfg(wayland_platform)]
+        if let event::Event::PlatformSpecific(event::PlatformSpecific::Wayland(
+            event::wayland::Event::Popup(event::wayland::PopupEvent::Unfocused, _, popup),
+        )) = event
+            && *popup == self.window_id
+            && self
+                .tree
+                .inner
+                .with_data(|data| data.open && root_popup(data) == Some(self.window_id))
+        {
+            self.close_menus(shell, view_cursor);
             return None;
         }
 
@@ -1129,7 +1185,13 @@ impl<Message: std::clone::Clone + 'static> Widget<Message, crate::Theme, crate::
                         id: popup_id,
                         positioner: positioner.clone(),
                         parent_size: None,
-                        grab: true,
+                        // Nested popups do not take a grab: the parent popup's
+                        // grab already routes pointer events within this client
+                        // and dismisses the chain on outside clicks. Requesting
+                        // a grab here replaces the parent's pointer grab, which
+                        // also drops the keyboard grab and immediately unfocuses
+                        // the just-opened submenu.
+                        grab: false,
                         close_with_children: false,
                         input_zone: None,
                     },
@@ -1334,6 +1396,16 @@ pub(super) fn init_root_popup_menu<Message>(
         // Hack to ensure menu opens properly
         shell.invalidate_layout();
     });
+}
+
+/// The root popup of a menu chain is the popup whose parent is not itself a popup.
+#[cfg(wayland_platform)]
+fn root_popup(data: &MenuBarStateInner) -> Option<window::Id> {
+    let popup_ids: HashSet<_> = data.popup_id.values().copied().collect();
+    data.popup_id
+        .iter()
+        .find(|(key, _)| !popup_ids.contains(key))
+        .map(|(_, value)| *value)
 }
 
 #[allow(clippy::too_many_arguments)]

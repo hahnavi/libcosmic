@@ -25,7 +25,7 @@ use iced_widget::core::renderer::{self, Renderer as IcedRenderer};
 use iced_widget::core::widget::{Tree, tree};
 use iced_widget::core::{
     Alignment, Clipboard, Element, Layout, Length, Padding, Rectangle, Shell, Widget, event,
-    overlay, touch,
+    keyboard, overlay, touch,
 };
 
 /// A `MenuBar` collects `MenuTree`s and handles all the layout, event processing, and drawing.
@@ -645,6 +645,39 @@ where
         });
 
         match event {
+            event::Event::Keyboard(keyboard::Event::KeyPressed {
+                key: keyboard::Key::Named(keyboard::key::Named::Escape),
+                ..
+            }) if open => {
+                // Close all menus when `Escape` is pressed.
+                #[cfg_attr(not(wayland_platform), allow(unused_variables))]
+                let root_popup: Option<window::Id> = my_state.inner.with_data_mut(|state| {
+                    state.reset();
+                    state.view_cursor = view_cursor;
+
+                    // Keep the popup mappings: the synthetic `PopupEvent::Done`
+                    // for the destroyed root popup clears the whole chain.
+                    #[cfg(wayland_platform)]
+                    {
+                        state.popup_id.get(&self.window_id).copied()
+                    }
+                    #[cfg(not(wayland_platform))]
+                    {
+                        None
+                    }
+                });
+
+                shell.capture_event();
+                shell.request_redraw();
+
+                #[cfg(wayland_platform)]
+                if matches!(WINDOWING_SYSTEM.get(), Some(WindowingSystem::Wayland))
+                    && let (Some(id), Some(handler)) = (root_popup, self.on_surface_action.as_ref())
+                {
+                    // Destroying the root popup dismisses its descendants with it.
+                    shell.publish((handler)(crate::surface::action::destroy_popup(id)));
+                }
+            }
             Mouse(mouse::Event::ButtonPressed(Left))
             | Touch(touch::Event::FingerPressed { .. })
                 if view_cursor.is_over(layout.bounds()) =>
@@ -659,7 +692,9 @@ where
                         state.view_cursor = view_cursor;
                         state.open = true;
                         create_popup = true;
-                    } else if let Some(_id) = state.popup_id.remove(&self.window_id) {
+                    } else if let Some(_id) = state.popup_id.get(&self.window_id).copied() {
+                        // Keep the popup mappings: the synthetic `PopupEvent::Done`
+                        // for the destroyed root popup clears the whole chain.
                         state.menu_states.clear();
                         state.active_root.clear();
                         state.open = false;
