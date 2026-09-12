@@ -78,6 +78,7 @@ impl MenuBarStateInner {
         self.open = false;
         self.active_root = Vec::new();
         self.menu_states.clear();
+        self.bar_pressed = false;
     }
 }
 impl Default for MenuBarStateInner {
@@ -682,10 +683,72 @@ where
             | Touch(touch::Event::FingerPressed { .. })
                 if view_cursor.is_over(layout.bounds()) =>
             {
-                // TODO should we track that it has been pressed?
+                // Open menus on press instead of release. The popup surface
+                // takes a compositor round trip to configure and map, so
+                // waiting for the release makes every click take as long as
+                // the button was held. Starting on press lets the popup
+                // appear as soon as it is ready.
+                //
+                // The popup is only created on Wayland; other platforms use
+                // the in-window overlay.
+                #[cfg(wayland_platform)]
+                let popup_supported = matches!(
+                    WINDOWING_SYSTEM.get(),
+                    Some(WindowingSystem::Wayland)
+                ) && self.on_surface_action.is_some()
+                    && self.window_id != window::Id::NONE;
+                #[cfg(not(wayland_platform))]
+                let popup_supported = false;
+
+                let hovered_root = layout
+                    .children()
+                    .position(|lo| view_cursor.is_over(lo.bounds()));
+
+                let create_popup = my_state.inner.with_data_mut(|state| {
+                    // Pressing another root while a menu is open switches to
+                    // that root, matching the hover behavior.
+                    let switched = popup_supported
+                        && state
+                            .active_root
+                            .first()
+                            .zip(hovered_root)
+                            .is_some_and(|(active, hovered)| *active != hovered);
+
+                    let create_popup = state.menu_states.is_empty() || switched;
+                    if create_popup {
+                        state.view_cursor = view_cursor;
+                        state.open = true;
+                        // Marks that the next release ends this press and
+                        // should be ignored by `MenuBar` and `Menu`, which
+                        // keeps the popup open after a click.
+                        state.bar_pressed = true;
+                    }
+                    create_popup
+                });
+
                 shell.capture_event();
+
+                if create_popup {
+                    shell.request_redraw();
+
+                    #[cfg(wayland_platform)]
+                    if matches!(WINDOWING_SYSTEM.get(), Some(WindowingSystem::Wayland)) {
+                        self.create_popup(layout, view_cursor, renderer, shell, viewport, my_state);
+                    }
+                }
             }
             Mouse(ButtonReleased(Left)) | Touch(FingerLifted { .. } | FingerLost { .. }) => {
+                // Ignore the release that ends the press which opened the
+                // menu: it is part of the same click and must not dismiss the
+                // popup.
+                if my_state
+                    .inner
+                    .with_data_mut(|state| std::mem::take(&mut state.bar_pressed))
+                {
+                    shell.capture_event();
+                    return;
+                }
+
                 let create_popup = my_state.inner.with_data_mut(|state| {
                     let mut create_popup = false;
                     if state.menu_states.is_empty() && view_cursor.is_over(layout.bounds()) {

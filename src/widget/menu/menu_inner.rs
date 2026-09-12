@@ -584,7 +584,7 @@ impl<'b, Message: Clone + 'static> Menu<'b, Message> {
         use event::Status::{Captured, Ignored};
         use mouse::Button::Left;
         use mouse::Event::{ButtonPressed, ButtonReleased, CursorMoved, WheelScrolled};
-        use touch::Event::{FingerLifted, FingerMoved, FingerPressed};
+        use touch::Event::{FingerLifted, FingerLost, FingerMoved, FingerPressed};
 
         if !self
             .tree
@@ -623,6 +623,22 @@ impl<'b, Message: Clone + 'static> Menu<'b, Message> {
                 .with_data(|data| data.open && root_popup(data) == Some(self.window_id))
         {
             self.close_menus(shell, view_cursor);
+            return None;
+        }
+
+        // The release of the press that opened this menu is part of the same
+        // click and must not dismiss the menu or activate an item. `MenuBar`
+        // sets `bar_pressed` when it creates the popup on press; whichever
+        // side receives the release clears it here.
+        if matches!(
+            event,
+            Mouse(ButtonReleased(_)) | Touch(FingerLifted { .. } | FingerLost { .. })
+        ) && self
+            .tree
+            .inner
+            .with_data_mut(|state| std::mem::take(&mut state.bar_pressed))
+        {
+            shell.capture_event();
             return None;
         }
 
