@@ -115,7 +115,7 @@ impl ResponsiveMenuBar {
                     .spacing(self.spacing)
                     .on_surface_action(action_message.clone())
                     .window_id_maybe(core.main_window_id()),
-                    crate::widget::Id::new(format!("menu_bar_expanded_{id}")),
+                    crate::widget::Id::unique(),
                 ),
                 id,
                 action_message,
@@ -150,7 +150,7 @@ impl ResponsiveMenuBar {
                     .spacing(self.spacing)
                     .on_surface_action(action_message.clone())
                     .window_id_maybe(core.main_window_id()),
-                    crate::widget::Id::new(format!("menu_bar_collapsed_{id}")),
+                    crate::widget::Id::unique(),
                 ),
                 id,
                 action_message,

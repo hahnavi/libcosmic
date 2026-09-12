@@ -54,6 +54,16 @@ pub(crate) struct MenuBarStateInner {
     /// List of all menu states
     pub(crate) menu_states: Vec<MenuState>,
 }
+impl MenuBarState {
+    pub(crate) fn new<Message: Clone + 'static>(menu_roots: &[MenuTree<Message>]) -> Self {
+        let mut state = Self::default();
+        state.inner.with_data_mut(|inner| {
+            inner.tree.children = menu_roots_children(menu_roots);
+        });
+        state
+    }
+}
+
 impl MenuBarStateInner {
     /// get the list of indices hovered for the menu
     pub(super) fn get_trimmed_indices(&self, index: usize) -> impl Iterator<Item = usize> + '_ {
@@ -383,18 +393,27 @@ where
             }
 
             let (id, root_list) = my_state.inner.with_data_mut(|state| {
-                if let Some(id) = state.popup_id.get(&self.window_id).copied() {
-                    // close existing popups
+                let id = if let Some(id) = state.popup_id.get(&self.window_id).copied() {
+                    // Reuse the existing popup for the new root; destroying it first forces a fresh surface.
+                    // Nested popups are attached to the reused root and must be torn down with it.
+                    if let Some(child) = state.popup_id.remove(&id) {
+                        let mut stack = vec![child];
+                        while let Some(popup) = stack.pop() {
+                            if let Some(grandchild) = state.popup_id.remove(&popup) {
+                                stack.push(grandchild);
+                            }
+                        }
+                        shell.publish(surface_action(destroy_popup(child)));
+                    }
                     state.menu_states.clear();
                     state.active_root.clear();
-                    shell.publish(surface_action(destroy_popup(id)));
                     state.view_cursor = view_cursor;
-                }
-                // A fresh id per popup, so the old popup's Done cannot be mistaken for the new one's
-                (
-                    window::Id::unique(),
-                    layout.children().map(|lo| lo.bounds()).collect(),
-                )
+                    id
+                } else {
+                    window::Id::unique()
+                };
+
+                (id, layout.children().map(|lo| lo.bounds()).collect())
             });
 
             let mut popup_menu: Menu<'static, _> = Menu {
@@ -527,7 +546,7 @@ where
     }
 
     fn state(&self) -> tree::State {
-        tree::State::new(MenuBarState::default())
+        tree::State::new(MenuBarState::new(&self.menu_roots))
     }
 
     fn children(&self) -> Vec<Tree> {

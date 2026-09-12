@@ -222,6 +222,12 @@ impl Core {
         self.keyboard_nav
     }
 
+    /// Returns the last known layout limits and unrestricted content size for a responsive menu bar, or `None` before it has been laid out.
+    #[must_use]
+    pub fn menu_bar_size(&self, id: &crate::widget::Id) -> Option<(Limits, Size)> {
+        self.menu_bars.get(id).copied()
+    }
+
     /// Changes the scaling factor used by the application.
     #[cold]
     pub(crate) fn set_scale_factor(&mut self, factor: f32) {
