@@ -33,7 +33,7 @@ pub(crate) fn iced_settings<App: Application>(
     settings: Settings,
     flags: App::Flags,
 ) -> (iced::Settings, (Core, App::Flags), iced::window::Settings) {
-    preload_fonts();
+    preload_fonts(settings.default_font);
 
     let mut core = Core::default();
     core.debug = settings.debug;
@@ -899,12 +899,43 @@ const EMBEDDED_FONTS: &[&[u8]] = &[
 ];
 
 #[cold]
-fn preload_fonts() {
-    let mut font_system = iced::advanced::graphics::text::font_system()
-        .write()
-        .unwrap();
+fn preload_fonts(default_font: iced_core::Font) {
+    // Initializing the font system runs a fontconfig scan that can take tens of
+    // milliseconds on systems with many fonts. Do it on a worker thread so
+    // that window creation and GPU initialization can run in parallel. The
+    // first text layout blocks on the font system lock if the scan has not
+    // finished yet, so text is never shaped against an incomplete database.
+    std::thread::Builder::new()
+        .name("font-preload".into())
+        .spawn(move || {
+            let mut font_system = iced::advanced::graphics::text::font_system()
+                .write()
+                .unwrap();
 
-    EMBEDDED_FONTS
-        .iter()
-        .for_each(move |font| font_system.load_font(Cow::Borrowed(font)));
+            EMBEDDED_FONTS
+                .iter()
+                .for_each(|font| font_system.load_font(Cow::Borrowed(font)));
+
+            // Shape a throwaway paragraph with the default font so that its
+            // face data is parsed and the shaper caches are populated before
+            // the first frame is built.
+            if let iced_core::font::Family::Name(name) = &default_font.family {
+                use iced::advanced::graphics::text::cosmic_text;
+
+                let mut buffer = cosmic_text::Buffer::new(
+                    font_system.raw(),
+                    cosmic_text::Metrics::new(14.0, 14.0),
+                );
+                buffer.set_size(Some(800.0), Some(100.0));
+                buffer.set_text(
+                    "The quick brown fox jumps over the lazy dog 0123456789",
+                    &cosmic_text::Attrs::new()
+                        .family(cosmic_text::Family::Name(name)),
+                    cosmic_text::Shaping::Advanced,
+                    None,
+                );
+                buffer.shape_until_scroll(font_system.raw(), false);
+            }
+        })
+        .ok();
 }
