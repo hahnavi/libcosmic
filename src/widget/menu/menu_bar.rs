@@ -49,6 +49,8 @@ pub(crate) struct MenuBarStateInner {
     pub(crate) view_cursor: Cursor,
     pub(crate) open: bool,
     pub(crate) active_root: Vec<usize>,
+    /// Menu root currently under the cursor, if any.
+    pub(crate) hovered_root: Option<usize>,
     pub(crate) horizontal_direction: Direction,
     pub(crate) vertical_direction: Direction,
     /// List of all menu states
@@ -79,6 +81,7 @@ impl MenuBarStateInner {
         self.active_root = Vec::new();
         self.menu_states.clear();
         self.bar_pressed = false;
+        self.hovered_root = None;
     }
 }
 impl Default for MenuBarStateInner {
@@ -89,6 +92,7 @@ impl Default for MenuBarStateInner {
             view_cursor: Cursor::Available([-0.5, -0.5].into()),
             open: false,
             active_root: Vec::new(),
+            hovered_root: None,
             horizontal_direction: Direction::Positive,
             vertical_direction: Direction::Positive,
             menu_states: Vec::new(),
@@ -785,14 +789,33 @@ where
                     self.create_popup(layout, view_cursor, renderer, shell, viewport, my_state);
                 }
             }
-            Mouse(mouse::Event::CursorMoved { .. } | mouse::Event::CursorEntered)
-                if open && view_cursor.is_over(layout.bounds()) =>
-            {
-                shell.request_redraw();
-                shell.capture_event();
-                #[cfg(wayland_platform)]
-                if matches!(WINDOWING_SYSTEM.get(), Some(WindowingSystem::Wayland)) {
-                    self.create_popup(layout, view_cursor, renderer, shell, viewport, my_state);
+            Mouse(mouse::Event::CursorMoved { .. } | mouse::Event::CursorEntered) => {
+                let hovered_root = layout
+                    .children()
+                    .position(|lo| view_cursor.is_over(lo.bounds()));
+                let hover_changed = my_state.inner.with_data_mut(|state| {
+                    let changed = state.hovered_root != hovered_root;
+                    state.hovered_root = hovered_root;
+                    changed
+                });
+                if hover_changed {
+                    shell.request_redraw();
+                }
+
+                if open && view_cursor.is_over(layout.bounds()) {
+                    shell.capture_event();
+                    #[cfg(wayland_platform)]
+                    if matches!(WINDOWING_SYSTEM.get(), Some(WindowingSystem::Wayland)) {
+                        self.create_popup(layout, view_cursor, renderer, shell, viewport, my_state);
+                    }
+                }
+            }
+            Mouse(mouse::Event::CursorLeft) => {
+                let hover_changed = my_state
+                    .inner
+                    .with_data_mut(|state| state.hovered_root.take().is_some());
+                if hover_changed {
+                    shell.request_redraw();
                 }
             }
             _ => (),
@@ -818,17 +841,18 @@ where
                 view_cursor
             };
 
+            let mut is_overlay = true;
+            #[cfg(wayland_platform)]
+            if matches!(WINDOWING_SYSTEM.get(), Some(WindowingSystem::Wayland))
+                && self.on_surface_action.is_some()
+                && self.window_id != window::Id::NONE
+            {
+                is_overlay = true;
+            };
+            let styling = theme.appearance(&self.style, is_overlay);
+
             // draw path highlight
             if self.path_highlight.is_some() {
-                let mut is_overlay = true;
-                #[cfg(wayland_platform)]
-                if matches!(WINDOWING_SYSTEM.get(), Some(WindowingSystem::Wayland))
-                    && self.on_surface_action.is_some()
-                    && self.window_id != window::Id::NONE
-                {
-                    is_overlay = true;
-                };
-                let styling = theme.appearance(&self.style, is_overlay);
                 if let Some(active) = state.active_root.first() {
                     let active_bounds = layout
                         .children()
@@ -847,6 +871,32 @@ where
 
                     renderer.fill_quad(path_quad, styling.path);
                 }
+            }
+
+            // draw a lighter background on the root under the cursor. Roots
+            // have no button background of their own, so without this there is
+            // no hover feedback. Skipped when the root is already active.
+            if let Some(hovered) = layout
+                .children()
+                .position(|lo| position.is_over(lo.bounds()))
+                && state.active_root.first() != Some(&hovered)
+            {
+                let mut color = styling.path;
+                color.a *= 0.5;
+                let hover_quad = renderer::Quad {
+                    bounds: layout
+                        .children()
+                        .nth(hovered)
+                        .map_or_else(Rectangle::default, |lo| lo.bounds()),
+                    border: Border {
+                        radius: styling.bar_border_radius.into(),
+                        ..Default::default()
+                    },
+                    shadow: Shadow::default(),
+                    snap: true,
+                };
+
+                renderer.fill_quad(hover_quad, color);
             }
 
             self.menu_roots
