@@ -626,10 +626,10 @@ impl<'b, Message: Clone + 'static> Menu<'b, Message> {
             return None;
         }
 
-        // The release of the press that opened this menu is part of the same
+        // The release of the press that toggled this menu is part of the same
         // click and must not dismiss the menu or activate an item. `MenuBar`
-        // sets `bar_pressed` when it creates the popup on press; whichever
-        // side receives the release clears it here.
+        // sets `bar_pressed` when it creates or destroys the popup on press;
+        // whichever side receives the release clears it here.
         if matches!(
             event,
             Mouse(ButtonReleased(_)) | Touch(FingerLifted { .. } | FingerLost { .. })

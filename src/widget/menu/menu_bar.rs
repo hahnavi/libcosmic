@@ -80,7 +80,6 @@ impl MenuBarStateInner {
         self.open = false;
         self.active_root = Vec::new();
         self.menu_states.clear();
-        self.bar_pressed = false;
         self.hovered_root = None;
     }
 }
@@ -687,11 +686,9 @@ where
             | Touch(touch::Event::FingerPressed { .. })
                 if view_cursor.is_over(layout.bounds()) =>
             {
-                // Open menus on press instead of release. The popup surface
-                // takes a compositor round trip to configure and map, so
-                // waiting for the release makes every click take as long as
-                // the button was held. Starting on press lets the popup
-                // appear as soon as it is ready.
+                // Toggle menus on press so popups appear without waiting for
+                // button release, which avoids compositor round-trip delay.
+                // Pressing the open root also closes the popup immediately.
                 //
                 // The popup is only created on Wayland; other platforms use
                 // the in-window overlay.
@@ -708,7 +705,29 @@ where
                     .children()
                     .position(|lo| view_cursor.is_over(lo.bounds()));
 
-                let create_popup = my_state.inner.with_data_mut(|state| {
+                let (create_popup, toggled_closed) = my_state.inner.with_data_mut(|state| {
+                    let toggled_closed = state.open
+                        && hovered_root
+                            .is_some_and(|hovered| state.active_root.first() == Some(&hovered));
+
+                    if toggled_closed {
+                        state.menu_states.clear();
+                        state.active_root.clear();
+                        state.open = false;
+                        state.view_cursor = view_cursor;
+                        state.bar_pressed = true;
+
+                        #[cfg(wayland_platform)]
+                        if matches!(WINDOWING_SYSTEM.get(), Some(WindowingSystem::Wayland))
+                            && let Some(handler) = self.on_surface_action.as_ref()
+                            && let Some(popup) = state.popup_id.get(&self.window_id).copied()
+                        {
+                            shell.publish((handler)(crate::surface::action::destroy_popup(popup)));
+                        }
+
+                        return (false, true);
+                    }
+
                     // Pressing another root while a menu is open switches to
                     // that root, matching the hover behavior.
                     let switched = popup_supported
@@ -727,10 +746,14 @@ where
                         // keeps the popup open after a click.
                         state.bar_pressed = true;
                     }
-                    create_popup
+                    (create_popup, false)
                 });
 
                 shell.capture_event();
+
+                if toggled_closed {
+                    shell.request_redraw();
+                }
 
                 if create_popup {
                     shell.request_redraw();
@@ -742,9 +765,9 @@ where
                 }
             }
             Mouse(ButtonReleased(Left)) | Touch(FingerLifted { .. } | FingerLost { .. }) => {
-                // Ignore the release that ends the press which opened the
-                // menu: it is part of the same click and must not dismiss the
-                // popup.
+                // Ignore the release that ends the press which toggled the
+                // menu: it is part of the same click and must not toggle it
+                // again.
                 if my_state
                     .inner
                     .with_data_mut(|state| std::mem::take(&mut state.bar_pressed))
