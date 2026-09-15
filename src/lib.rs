@@ -167,6 +167,8 @@ pub use cctk;
 
 pub mod surface;
 
+pub mod window;
+
 pub use iced::Task;
 pub mod task;
 

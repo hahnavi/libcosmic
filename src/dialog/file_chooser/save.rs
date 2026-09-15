@@ -32,6 +32,11 @@ pub struct Dialog {
     #[setters(skip)]
     modal: bool,
 
+    /// The parent window that the dialog is shown for.
+    #[cfg(xdg_portal)]
+    #[setters(skip)]
+    identifier: Option<ashpd::WindowIdentifier>,
+
     /// Set starting file name of the dialog.
     #[setters(strip_option)]
     file_name: Option<String>,
@@ -68,6 +73,8 @@ impl Dialog {
             accept_label: None,
             #[cfg(xdg_portal)]
             modal: true,
+            #[cfg(xdg_portal)]
+            identifier: None,
             file_name: None,
             directory: None,
             #[cfg(xdg_portal)]
@@ -114,6 +121,15 @@ impl Dialog {
         self
     }
 
+    /// Sets the parent window that the dialog is shown for.
+    ///
+    /// Use [`crate::window::identifier`] to get the identifier of a window.
+    #[cfg(xdg_portal)]
+    pub fn identifier(mut self, identifier: impl Into<Option<ashpd::WindowIdentifier>>) -> Self {
+        self.identifier = identifier.into();
+        self
+    }
+
     /// Create a save file dialog request.
     pub async fn save_file(self) -> Result<Response, Error> {
         file(self).await
@@ -140,6 +156,7 @@ mod portal {
             .title(Some(dialog.title.as_str()))
             .accept_label(dialog.accept_label.as_deref())
             .modal(dialog.modal)
+            .identifier(dialog.identifier)
             .choices(dialog.choices)
             .filters(dialog.filters)
             .current_filter(dialog.current_filter)

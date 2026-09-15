@@ -43,6 +43,11 @@ pub struct Dialog {
     #[setters(skip)]
     modal: bool,
 
+    /// The parent window that the dialog is shown for.
+    #[cfg(xdg_portal)]
+    #[setters(skip)]
+    identifier: Option<ashpd::WindowIdentifier>,
+
     /// Adds a list of choices.
     #[cfg(xdg_portal)]
     #[setters(skip)]
@@ -68,6 +73,8 @@ impl Dialog {
             file_name: None,
             #[cfg(xdg_portal)]
             modal: true,
+            #[cfg(xdg_portal)]
+            identifier: None,
             #[cfg(xdg_portal)]
             current_filter: None,
             #[cfg(xdg_portal)]
@@ -107,6 +114,13 @@ impl Dialog {
     #[cfg(xdg_portal)]
     pub fn modal(mut self, modal: bool) -> Self {
         self.modal = modal;
+        self
+    }
+
+    /// Sets the parent window that the dialog is shown for; use [`crate::window::identifier`] to get the identifier of a window.
+    #[cfg(xdg_portal)]
+    pub fn identifier(mut self, identifier: impl Into<Option<ashpd::WindowIdentifier>>) -> Self {
+        self.identifier = identifier.into();
         self
     }
 
@@ -153,12 +167,12 @@ mod portal {
         folders: bool,
         multiple: bool,
     ) -> Result<ashpd::desktop::Request<SelectedFiles>, Error> {
-        // TODO: Set window identifier
         ashpd::desktop::file_chooser::OpenFileRequest::default()
             .title(Some(dialog.title.as_str()))
             .accept_label(dialog.accept_label.as_deref())
             .directory(folders)
             .modal(dialog.modal)
+            .identifier(dialog.identifier)
             .multiple(multiple)
             .choices(dialog.choices)
             .filters(dialog.filters)
