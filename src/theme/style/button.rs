@@ -204,7 +204,7 @@ impl Catalog for crate::Theme {
             return active(focused, self);
         }
 
-        appearance(self, focused, selected, false, style, move |component| {
+        let mut styled = appearance(self, focused, selected, false, style, move |component| {
             let text_color = if matches!(
                 style,
                 Button::Icon | Button::IconVertical | Button::HeaderBar
@@ -216,7 +216,13 @@ impl Catalog for crate::Theme {
             };
 
             (component.base.into(), text_color, text_color)
-        })
+        });
+
+        if matches!(style, Button::MenuItem | Button::MenuFolder) {
+            styled.background = None;
+        }
+
+        styled
     }
 
     fn disabled(&self, style: &Self::Class) -> Style {
@@ -224,7 +230,7 @@ impl Catalog for crate::Theme {
             return disabled(self);
         }
 
-        appearance(self, false, false, true, style, |component| {
+        let mut styled = appearance(self, false, false, true, style, |component| {
             let mut background = Color::from(component.base);
             if !matches!(
                 style,
@@ -237,7 +243,13 @@ impl Catalog for crate::Theme {
                 Some(component.on_disabled.into()),
                 Some(component.on_disabled.into()),
             )
-        })
+        });
+
+        if matches!(style, Button::MenuItem | Button::MenuFolder) {
+            styled.background = None;
+        }
+
+        styled
     }
 
     fn drop_target(&self, style: &Self::Class) -> Style {

@@ -22,6 +22,21 @@ use iced_widget::core::{
     overlay, renderer, touch,
 };
 
+pub(crate) const MENU_ITEM_MARGIN_X: f32 = 4.0;
+pub(crate) const MENU_ITEM_MARGIN_Y: f32 = 4.0;
+pub(crate) const MENU_ITEM_SPACING: f32 = 4.0;
+
+/// Size of an item widget inside the menu panel. Short rows (e.g. 1px
+/// dividers) keep their height and are only inset horizontally.
+fn inset_item_size(size: Size) -> Size {
+    let width = (size.width - 2.0 * MENU_ITEM_MARGIN_X).max(0.0);
+    if size.height > 2.0 * MENU_ITEM_MARGIN_Y {
+        Size::new(width, size.height - 2.0 * MENU_ITEM_MARGIN_Y)
+    } else {
+        Size::new(width, size.height)
+    }
+}
+
 /// The condition of when to close a menu
 #[derive(Debug, Clone, Copy)]
 pub struct CloseCondition {
@@ -345,13 +360,18 @@ impl MenuState {
 
                 let limits = Limits::new(size, size);
 
+                let limits = Limits::new(size, size);
+
                 mt.item
                     .element
                     .with_data_mut(|e| {
                         e.as_widget_mut()
                             .layout(&mut tree[mt.index], renderer, &limits)
                     })
-                    .move_to(Point::new(0.0, position + self.scroll_offset))
+                    .move_to(Point::new(
+                        MENU_ITEM_MARGIN_X,
+                        position + self.scroll_offset,
+                    ))
             })
             .collect::<Vec<_>>();
 
@@ -370,22 +390,18 @@ impl MenuState {
         let children_bounds = self.menu_bounds.children_bounds + overlay_offset;
 
         let position = self.menu_bounds.child_positions[index];
-        let limits = Limits::new(Size::ZERO, self.menu_bounds.child_sizes[index]);
+        let item_size = self.menu_bounds.child_sizes[index];
+        let limits = Limits::new(Size::ZERO, item_size);
         let parent_offset = children_bounds.position() - Point::ORIGIN;
         let node = menu_tree.item.layout(tree, renderer, &limits);
         node.move_to(Point::new(
-            parent_offset.x,
+            parent_offset.x + MENU_ITEM_MARGIN_X,
             parent_offset.y + position + self.scroll_offset,
         ))
     }
 
     /// returns a slice of the menu items that are inside the viewport
-    pub(super) fn slice(
-        &self,
-        viewport_size: Size,
-        overlay_offset: Vector,
-        item_height: ItemHeight,
-    ) -> MenuSlice {
+    pub(super) fn slice(&self, viewport_size: Size, overlay_offset: Vector) -> MenuSlice {
         // viewport space children bounds
         let children_bounds = self.menu_bounds.children_bounds + overlay_offset;
 
@@ -399,31 +415,20 @@ impl MenuState {
         let lower_bound_rel = lower_bound - (children_bounds.y + self.scroll_offset);
         let upper_bound_rel = upper_bound - (children_bounds.y + self.scroll_offset);
 
-        // index range
-        let (start_index, end_index) = match item_height {
-            ItemHeight::Uniform(u) => {
-                let start_index = (lower_bound_rel / f32::from(u)).floor() as usize;
-                let end_index = ((upper_bound_rel / f32::from(u)).floor() as usize).min(max_index);
-                (start_index, end_index)
-            }
-            ItemHeight::Static(_) | ItemHeight::Dynamic(_) => {
-                let positions = &self.menu_bounds.child_positions;
-                let sizes = &self.menu_bounds.child_sizes;
+        // Index range. The pre-computed positions and sizes already account for
+        // the per-item margins and spacing, so the same search works for every
+        // `ItemHeight` strategy.
+        let positions = &self.menu_bounds.child_positions;
 
-                let start_index = search_bound(0, 0, max_index, lower_bound_rel, positions, sizes);
-                let end_index = search_bound(
-                    max_index,
-                    start_index,
-                    max_index,
-                    upper_bound_rel,
-                    positions,
-                    sizes,
-                )
-                .min(max_index);
-
-                (start_index, end_index)
-            }
-        };
+        let start_index = search_bound(0, 0, max_index, lower_bound_rel, positions);
+        let end_index = search_bound(
+            max_index,
+            start_index,
+            max_index,
+            upper_bound_rel,
+            positions,
+        )
+        .min(max_index);
 
         MenuSlice {
             start_index,
@@ -508,8 +513,7 @@ impl<'b, Message: Clone + 'static> Menu<'b, Message> {
                         .fold(
                             (roots, Vec::new()),
                             |(menu_root, mut nodes), (_i, ms)| {
-                                let slice =
-                                    ms.slice(limits.max(), overlay_offset, self.item_height);
+                                let slice = ms.slice(limits.max(), overlay_offset);
                                 let _start_index = slice.start_index;
                                 let _end_index = slice.end_index;
                                 let children_node = ms.layout(
@@ -851,7 +855,7 @@ impl<'b, Message: Clone + 'static> Menu<'b, Message> {
 
                         let draw_menu = |r: &mut crate::Renderer| {
                             // calc slice
-                            let slice = ms.slice(viewport_size, overlay_offset, self.item_height);
+                            let slice = ms.slice(viewport_size, overlay_offset);
                             let start_index = slice.start_index;
                             let end_index = slice.end_index;
 
@@ -883,27 +887,13 @@ impl<'b, Message: Clone + 'static> Menu<'b, Message> {
                                     .children()
                                     .nth(active.saturating_sub(start_index))
                             {
-                                let i = active.saturating_sub(start_index);
-                                let mut rad = styling.menu_border_radius;
-                                let rad_0 = theme.cosmic().radius_0();
-                                if start_index != end_index {
-                                    if 0 == i {
-                                        rad[2] = rad_0[0];
-                                        rad[3] = rad_0[1];
-                                    } else if i == end_index - start_index {
-                                        rad[0] = rad_0[2];
-                                        rad[1] = rad_0[3];
-                                    } else {
-                                        rad = rad_0;
-                                    }
-                                }
                                 let path_quad = renderer::Quad {
                                     bounds: active_layout
                                         .bounds()
                                         .intersection(&viewport)
                                         .unwrap_or_default(),
                                     border: Border {
-                                        radius: rad.into(),
+                                        radius: styling.menu_border_radius.into(),
                                         ..Default::default()
                                     },
                                     shadow: Shadow::default(),
@@ -919,17 +909,8 @@ impl<'b, Message: Clone + 'static> Menu<'b, Message> {
                                     .enumerate()
                                     .zip(children_layout.children())
                                     .for_each(|((i, mt), clo)| {
-                                        let t = theme.with_list_item_position(
-                                            if start_index == end_index {
-                                                Some((Alignment::Center, i))
-                                            } else if 0 == i {
-                                                Some((Alignment::Start, i))
-                                            } else if i == end_index - start_index {
-                                                Some((Alignment::End, i))
-                                            } else {
-                                                None
-                                            },
-                                        );
+                                        let t = theme
+                                            .with_list_item_position(Some((Alignment::Center, i)));
 
                                         mt.item.draw(
                                             &state.tree.children[active_root[0]].children[mt.index],
@@ -1624,20 +1605,14 @@ where
         let tree = &mut state.tree.children[active_root[0]].children;
 
         let active_menu: &Vec<MenuTree<Message>> = roots;
-        let new_index = match menu.item_height {
-            ItemHeight::Uniform(u) => (height_diff / f32::from(u)).floor() as usize,
-            ItemHeight::Static(_) | ItemHeight::Dynamic(_) => {
-                let max_index = active_menu.len() - 1;
-                search_bound(
-                    0,
-                    0,
-                    max_index,
-                    height_diff,
-                    &last_menu_bounds.child_positions,
-                    &last_menu_bounds.child_sizes,
-                )
-            }
-        };
+        let max_index = active_menu.len() - 1;
+        let new_index = search_bound(
+            0,
+            0,
+            max_index,
+            height_diff,
+            &last_menu_bounds.child_positions,
+        );
 
         let remove = last_menu_state
             .index
@@ -1665,7 +1640,7 @@ where
         // * add new menu if the new item is a menu
         if !item.children.is_empty() && old_index.is_none_or(|i| i != new_index) {
             let item_position = Point::new(
-                0.0,
+                MENU_ITEM_MARGIN_X,
                 last_menu_bounds.child_positions[new_index] + last_menu_state.scroll_offset,
             );
             let item_size = last_menu_bounds.child_sizes[new_index];
@@ -1811,7 +1786,7 @@ fn get_children_layout<Message>(
         ItemWidth::Static(s) => f32::from(menu_tree.width.unwrap_or(s)),
     };
 
-    let child_sizes: Vec<Size> = match item_height {
+    let natural_sizes: Vec<Size> = match item_height {
         ItemHeight::Uniform(u) => {
             let count = menu_tree.children.len();
             vec![Size::new(width, f32::from(u)); count]
@@ -1857,32 +1832,42 @@ fn get_children_layout<Message>(
             .collect(),
     };
 
-    let max_index = menu_tree.children.len().saturating_sub(1);
-    let child_positions: Vec<f32> = std::iter::once(0.0)
-        .chain(child_sizes[0..max_index].iter().scan(0.0, |acc, x| {
-            *acc += x.height;
-            Some(*acc)
-        }))
-        .collect();
+    // Inset each item from the panel edges and leave a gap between rows, so the
+    // vertical rhythm matches the `MenuColumn` used by context menus.
+    let mut child_positions = Vec::with_capacity(natural_sizes.len());
+    let mut child_sizes = Vec::with_capacity(natural_sizes.len());
+    let mut cursor = MENU_ITEM_MARGIN_Y;
+    for size in &natural_sizes {
+        let item_size = inset_item_size(*size);
+        child_positions.push(cursor);
+        child_sizes.push(item_size);
+        cursor += item_size.height + MENU_ITEM_SPACING;
+    }
 
-    let height = child_sizes.iter().fold(0.0, |acc, x| acc + x.height);
+    let height = if natural_sizes.is_empty() {
+        0.0
+    } else {
+        cursor - MENU_ITEM_SPACING + MENU_ITEM_MARGIN_Y
+    };
 
     (Size::new(width, height), child_positions, child_sizes)
 }
 
+/// Returns the index of the item at the given `bound` offset using the
+/// pre-computed item positions. When `bound` falls in the gap after an item
+/// (or past the last one), the preceding item is returned; `default` is only
+/// used when `bound` is before the first searchable item.
 fn search_bound(
     default: usize,
     default_left: usize,
     default_right: usize,
     bound: f32,
     positions: &[f32],
-    sizes: &[Size],
 ) -> usize {
     // binary search
     let mut left = default_left;
     let mut right = default_right;
 
-    let mut index = default;
     while left != right {
         let m = ((left + right) / 2) + 1;
         if positions[m] > bound {
@@ -1891,10 +1876,10 @@ fn search_bound(
             left = m;
         }
     }
-    // let height = f32::from(menu_tree.children[left].height.unwrap_or(default_height));
-    let height = sizes[left].height;
-    if positions[left] + height > bound {
-        index = left;
+
+    if positions[left] <= bound {
+        left
+    } else {
+        default
     }
-    index
 }

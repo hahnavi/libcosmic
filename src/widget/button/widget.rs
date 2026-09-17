@@ -624,11 +624,17 @@ impl<'a, Message: 'a + Clone> Widget<Message, crate::Theme, crate::Renderer>
         _viewport: &Rectangle,
         _renderer: &crate::Renderer,
     ) -> mouse::Interaction {
-        mouse_interaction(
-            layout.with_virtual_offset(layout.virtual_offset()),
-            cursor,
-            self.on_press.is_some(),
-        )
+        let layout = layout.with_virtual_offset(layout.virtual_offset());
+
+        if matches!(
+            self.style,
+            crate::theme::Button::MenuItem | crate::theme::Button::MenuFolder
+        ) && cursor.is_over(layout.bounds())
+        {
+            return mouse::Interaction::Idle;
+        }
+
+        mouse_interaction(layout, cursor, self.on_press.is_some())
     }
 
     fn overlay<'b>(

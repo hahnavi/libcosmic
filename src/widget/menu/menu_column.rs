@@ -1,11 +1,12 @@
 //! Distribute content vertically.
+use super::menu_inner::{MENU_ITEM_MARGIN_Y, MENU_ITEM_SPACING};
 use crate::iced;
 use iced::core::alignment::{self, Alignment};
 use iced::core::event::{self, Event};
 use iced::core::widget::{Operation, Tree};
 use iced::core::{
-    Clipboard, Element, Layout, Length, Padding, Pixels, Rectangle, Shell, Size, Vector, Widget,
-    layout, mouse, overlay, renderer, widget,
+    Clipboard, Element, Layout, Length, Padding, Pixels, Point, Rectangle, Shell, Size, Vector,
+    Widget, layout, mouse, overlay, renderer, widget,
 };
 
 #[allow(missing_debug_implementations)]
@@ -53,8 +54,8 @@ where
     /// call [`MenuColumn::width`] or [`MenuColumn::height`] accordingly.
     pub fn from_vec(children: Vec<Element<'a, Message, crate::Theme, Renderer>>) -> Self {
         Self {
-            spacing: 0.0,
-            padding: Padding::ZERO,
+            spacing: MENU_ITEM_SPACING,
+            padding: Padding::new(4.0),
             width: Length::Shrink,
             height: Length::Shrink,
             max_width: f32::INFINITY,
@@ -192,19 +193,64 @@ where
         limits: &layout::Limits,
     ) -> layout::Node {
         let limits = limits.max_width(self.max_width);
+        let padding = self.padding;
 
-        layout::flex::resolve(
-            layout::flex::Axis::Vertical,
-            renderer,
-            &limits,
+        let inner_width = (limits.max().width - padding.left - padding.right).max(0.0);
+        let max_height = (limits.max().height - padding.top - padding.bottom).max(0.0);
+
+        let mut nodes = Vec::with_capacity(self.children.len());
+        let mut content_width: f32 = 0.0;
+        let mut cursor = 0.0;
+
+        for (i, (child, state)) in self
+            .children
+            .iter_mut()
+            .zip(&mut tree.children)
+            .enumerate()
+        {
+            if i > 0 {
+                cursor += self.spacing;
+            }
+
+            let remaining = (max_height - cursor).max(0.0);
+            let child_limits =
+                layout::Limits::new(Size::ZERO, Size::new(inner_width, remaining));
+            let mut node = child.as_widget_mut().layout(state, renderer, &child_limits);
+
+            let natural = node.size().height;
+            if natural > 2.0 * MENU_ITEM_MARGIN_Y {
+                let clamped_limits = layout::Limits::new(
+                    Size::ZERO,
+                    Size::new(inner_width, natural - 2.0 * MENU_ITEM_MARGIN_Y),
+                );
+                node = child.as_widget_mut().layout(state, renderer, &clamped_limits);
+            }
+
+            let x = match self.align {
+                Alignment::Start => 0.0,
+                Alignment::Center => (inner_width - node.size().width) / 2.0,
+                Alignment::End => inner_width - node.size().width,
+            };
+            let node_width = node.size().width;
+            let placed_height = node.size().height;
+            let node = node.move_to(Point::new(padding.left + x, padding.top + cursor));
+
+            content_width = content_width.max(node_width);
+            cursor += placed_height;
+
+            nodes.push(node);
+        }
+
+        let size = limits.resolve(
             self.width,
             self.height,
-            self.padding,
-            self.spacing,
-            self.align,
-            &mut self.children,
-            &mut tree.children,
-        )
+            Size::new(
+                content_width + padding.left + padding.right,
+                cursor + padding.top + padding.bottom,
+            ),
+        );
+
+        layout::Node::with_children(size, nodes)
     }
 
     fn operate(
@@ -312,15 +358,7 @@ where
                 .filter(|(_, layout)| layout.bounds().intersects(viewport))
                 .enumerate()
             {
-                let t = theme.with_list_item_position(if self.children.len() == 1 {
-                    Some((Alignment::Center, i))
-                } else if 0 == i {
-                    Some((Alignment::Start, i))
-                } else if i == self.children.len() - 1 {
-                    Some((Alignment::End, i))
-                } else {
-                    None
-                });
+                let t = theme.with_list_item_position(Some((Alignment::Center, i)));
                 child.as_widget().draw(
                     state,
                     renderer,

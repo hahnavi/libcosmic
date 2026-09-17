@@ -150,7 +150,7 @@ where
             .width(Length::Fill),
     )
     .height(Length::Fixed(36.0))
-    .padding([4, 16])
+    .padding([0, 16])
     .width(Length::Fill)
     .class(theme::Button::MenuItem)
 }
