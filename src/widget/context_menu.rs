@@ -256,6 +256,7 @@ impl<Message: 'static + Clone> Widget<Message, crate::Theme, crate::Renderer>
             fingers_pressed: Default::default(),
             menu_bar_state: Default::default(),
             reported_open: false,
+            right_pressed: false,
         })
     }
 
@@ -444,6 +445,10 @@ impl<Message: 'static + Clone> Widget<Message, crate::Theme, crate::Renderer>
             | Event::Touch(touch::Event::FingerPressed { .. })
                 if open )
         {
+            let closing_right_press = matches!(
+                event,
+                Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Right))
+            );
             state.menu_bar_state.inner.with_data_mut(|state| {
                 was_open = true;
                 state.menu_states.clear();
@@ -461,6 +466,8 @@ impl<Message: 'static + Clone> Widget<Message, crate::Theme, crate::Renderer>
                     state.view_cursor = cursor;
                 }
             });
+            // A press that closed the menu owns its following release too.
+            state.right_pressed = closing_right_press;
         }
 
         if !was_open && cursor.is_over(bounds) {
@@ -478,12 +485,18 @@ impl<Message: 'static + Clone> Widget<Message, crate::Theme, crate::Renderer>
                 _ => (),
             }
 
-            // Present a context menu on a right click event.
+            let release_after_press =
+                right_button_released(event) && std::mem::take(&mut state.right_pressed);
+
+            // Present the context menu on right-button press without waiting for the button hold or compositor round trip.
             if !was_open
+                && !open
+                && !release_after_press
                 && self.context_menu.is_some()
-                && (right_button_released(event) || (touch_lifted(event) && fingers_pressed == 2))
+                && (right_button_pressed(event) || (touch_lifted(event) && fingers_pressed == 2))
             {
                 state.context_cursor = cursor.position().unwrap_or_default();
+                state.right_pressed = right_button_pressed(event);
                 let state = tree.state.downcast_mut::<LocalState>();
                 state.menu_bar_state.inner.with_data_mut(|state| {
                     state.open = true;
@@ -497,10 +510,11 @@ impl<Message: 'static + Clone> Widget<Message, crate::Theme, crate::Renderer>
                 shell.request_redraw();
                 shell.capture_event();
                 self.report_open_state(tree.state.downcast_mut::<LocalState>(), shell);
-                return;
-            } else if !was_open && right_button_released(event)
-                || (touch_lifted(event))
-                || left_button_released(event)
+            } else if !was_open
+                && !release_after_press
+                && (right_button_released(event)
+                    || touch_lifted(event)
+                    || left_button_released(event))
             {
                 state.menu_bar_state.inner.with_data_mut(|state| {
                     was_open = true;
@@ -623,6 +637,13 @@ impl<'a, Message: Clone + 'static> From<ContextMenu<'a, Message>> for crate::Ele
     }
 }
 
+fn right_button_pressed(event: &Event) -> bool {
+    matches!(
+        event,
+        Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Right,))
+    )
+}
+
 fn right_button_released(event: &Event) -> bool {
     matches!(
         event,
@@ -646,4 +667,5 @@ pub struct LocalState {
     fingers_pressed: HashSet<Finger>,
     menu_bar_state: MenuBarState,
     reported_open: bool,
+    right_pressed: bool,
 }

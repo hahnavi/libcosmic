@@ -78,4 +78,6 @@ pub use menu_tree::{
 pub use crate::style::menu_bar::{Appearance, StyleSheet};
 pub(crate) use menu_bar::{menu_roots_children, menu_roots_diff};
 pub use menu_inner::{CloseCondition, ItemHeight, ItemWidth, PathHighlight};
-pub(crate) use menu_inner::{Direction, Menu, init_root_menu};
+pub(crate) use menu_inner::{
+    Direction, MENU_ITEM_MARGIN_X, MENU_ITEM_MARGIN_Y, MENU_ITEM_SPACING, Menu, init_root_menu,
+};

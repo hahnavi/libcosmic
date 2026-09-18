@@ -9,6 +9,7 @@ use std::sync::{Arc, Mutex};
 pub use appearance::{Appearance, StyleSheet};
 
 use crate::surface;
+use crate::widget::menu::{MENU_ITEM_MARGIN_X, MENU_ITEM_MARGIN_Y, MENU_ITEM_SPACING};
 use crate::widget::{Container, RcWrapper, icon};
 use iced_core::event::{self, Event};
 use iced_core::layout::{self, Layout};
@@ -19,6 +20,8 @@ use iced_core::{
     Size, Vector, Widget, alignment, mouse, overlay, renderer, svg, touch,
 };
 use iced_widget::scrollable::Scrollable;
+
+pub(crate) const MENU_PADDING: f32 = 4.0;
 
 /// A list of selectable options.
 #[must_use]
@@ -195,7 +198,7 @@ impl<'a, Message: Clone + 'a> Overlay<'a, Message> {
                 text_line_height,
                 padding,
             })
-            .padding(padding),
+            .padding(Padding::new(MENU_PADDING)),
         ))
         .class(crate::style::Container::Dropdown);
 
@@ -425,6 +428,45 @@ where
     text_line_height: text::LineHeight,
 }
 
+impl<S: AsRef<str>, Message> List<'_, S, Message>
+where
+    [S]: std::borrow::ToOwned,
+{
+    fn resolved_text_size(&self, renderer: &crate::Renderer) -> f32 {
+        self.text_size
+            .unwrap_or_else(|| text::Renderer::default_size(renderer).0)
+    }
+
+    fn option_height(&self, renderer: &crate::Renderer) -> f32 {
+        let text_size = self.resolved_text_size(renderer);
+        let natural =
+            f32::from(self.text_line_height.to_absolute(Pixels(text_size))) + self.padding.y();
+
+        if natural > 2.0 * MENU_ITEM_MARGIN_Y {
+            natural - 2.0 * MENU_ITEM_MARGIN_Y
+        } else {
+            natural
+        }
+    }
+
+    fn option_at(&self, renderer: &crate::Renderer, y: f32) -> Option<usize> {
+        let y = y - MENU_ITEM_MARGIN_Y;
+        if y < 0.0 {
+            return None;
+        }
+
+        let option_height = self.option_height(renderer);
+        let stride = option_height + MENU_ITEM_SPACING;
+        let index = (y / stride).floor() as usize;
+
+        if index >= self.options.len() || y - index as f32 * stride > option_height {
+            None
+        } else {
+            Some(index)
+        }
+    }
+}
+
 impl<S: AsRef<str>, Message> Widget<Message, crate::Theme, crate::Renderer> for List<'_, S, Message>
 where
     [S]: std::borrow::ToOwned,
@@ -440,23 +482,22 @@ where
         renderer: &crate::Renderer,
         limits: &layout::Limits,
     ) -> layout::Node {
-        use std::f32;
-
         let limits = limits.width(Length::Fill).height(Length::Shrink);
-        let text_size = self
-            .text_size
-            .unwrap_or_else(|| text::Renderer::default_size(renderer).0);
 
-        let text_line_height = self.text_line_height.to_absolute(Pixels(text_size));
+        let option_height = self.option_height(renderer);
+        let count = self.options.len();
+        let intrinsic = Size::new(
+            0.0,
+            if count == 0 {
+                0.0
+            } else {
+                2.0 * MENU_ITEM_MARGIN_Y
+                    + option_height * count as f32
+                    + MENU_ITEM_SPACING * (count - 1) as f32
+            },
+        );
 
-        let size = {
-            let intrinsic = Size::new(
-                0.0,
-                (f32::from(text_line_height) + self.padding.y()) * self.options.len() as f32,
-            );
-
-            limits.resolve(Length::Fill, Length::Shrink, intrinsic)
-        };
+        let size = limits.resolve(Length::Fill, Length::Shrink, intrinsic);
 
         layout::Node::new(size)
     }
@@ -488,26 +529,20 @@ where
             }
             Event::Mouse(mouse::Event::CursorMoved { .. }) => {
                 if let Some(cursor_position) = cursor.position_in(layout.bounds()) {
-                    let text_size = self
-                        .text_size
-                        .unwrap_or_else(|| text::Renderer::default_size(renderer).0);
-
-                    let option_height =
-                        f32::from(self.text_line_height.to_absolute(Pixels(text_size)))
-                            + self.padding.y();
-
-                    let new_hovered_option = (cursor_position.y / option_height) as usize;
+                    let new_hovered_option = self.option_at(renderer, cursor_position.y);
                     let mut hovered_guard = self.hovered_option.lock().unwrap();
 
-                    if *hovered_guard != Some(new_hovered_option) {
+                    if *hovered_guard != new_hovered_option {
                         shell.request_redraw();
 
-                        if let Some(on_option_hovered) = self.on_option_hovered {
-                            shell.publish(on_option_hovered(new_hovered_option));
+                        if let (Some(on_option_hovered), Some(index)) =
+                            (self.on_option_hovered, new_hovered_option)
+                        {
+                            shell.publish(on_option_hovered(index));
                         }
                     }
 
-                    *hovered_guard = Some(new_hovered_option);
+                    *hovered_guard = new_hovered_option;
                 } else {
                     let mut hovered_guard = self.hovered_option.lock().unwrap();
 
@@ -527,16 +562,9 @@ where
             }
             Event::Touch(touch::Event::FingerPressed { .. }) => {
                 if let Some(cursor_position) = cursor.position_in(layout.bounds()) {
-                    let text_size = self
-                        .text_size
-                        .unwrap_or_else(|| text::Renderer::default_size(renderer).0);
-
-                    let option_height =
-                        f32::from(self.text_line_height.to_absolute(Pixels(text_size)))
-                            + self.padding.y();
                     let mut hovered_guard = self.hovered_option.lock().unwrap();
 
-                    *hovered_guard = Some((cursor_position.y / option_height) as usize);
+                    *hovered_guard = self.option_at(renderer, cursor_position.y);
 
                     if let Some(index) = *hovered_guard {
                         shell.publish((self.on_selected)(index));
@@ -560,12 +588,10 @@ where
         _viewport: &Rectangle,
         _renderer: &crate::Renderer,
     ) -> mouse::Interaction {
-        let is_mouse_over = cursor.is_over(layout.bounds());
-
-        if is_mouse_over {
-            mouse::Interaction::Pointer
+        if cursor.is_over(layout.bounds()) {
+            mouse::Interaction::Idle
         } else {
-            mouse::Interaction::default()
+            mouse::Interaction::None
         }
     }
 
@@ -582,41 +608,32 @@ where
         let appearance = theme.appearance(&());
         let bounds = layout.bounds();
 
-        let text_size = self
-            .text_size
-            .unwrap_or_else(|| text::Renderer::default_size(renderer).0);
-        let option_height =
-            f32::from(self.text_line_height.to_absolute(Pixels(text_size))) + self.padding.y();
+        let text_size = self.resolved_text_size(renderer);
+        let option_height = self.option_height(renderer);
+        let stride = option_height + MENU_ITEM_SPACING;
 
         let offset = viewport.y - bounds.y;
-        let start = (offset / option_height) as usize;
-        let end = ((offset + viewport.height) / option_height).ceil() as usize;
+        let start = ((offset - MENU_ITEM_MARGIN_Y) / stride).max(0.0) as usize;
+        let end = ((offset + viewport.height) / stride).ceil() as usize;
 
         let visible_options = &self.options[start..end.min(self.options.len())];
 
         for (i, option) in visible_options.iter().enumerate() {
             let i = start + i;
 
-            let bounds = Rectangle {
-                x: bounds.x,
-                y: option_height.mul_add(i as f32, bounds.y),
-                width: bounds.width,
+            let row = Rectangle {
+                x: bounds.x + MENU_ITEM_MARGIN_X,
+                y: (MENU_ITEM_MARGIN_Y + stride * i as f32) + bounds.y,
+                width: (bounds.width - 2.0 * MENU_ITEM_MARGIN_X).max(0.0),
                 height: option_height,
             };
 
             let hovered_guard = self.hovered_option.lock().unwrap();
 
             let (color, font) = if self.selected_option == Some(i) {
-                let item_x = bounds.x + appearance.border_width;
-                let item_width = appearance.border_width.mul_add(-2.0, bounds.width);
-
                 renderer.fill_quad(
                     renderer::Quad {
-                        bounds: Rectangle {
-                            x: item_x,
-                            width: item_width,
-                            ..bounds
-                        },
+                        bounds: row,
                         border: Border {
                             radius: appearance.border_radius,
                             ..Default::default()
@@ -632,26 +649,19 @@ where
                         .color(appearance.selected_text_color)
                         .border_radius(appearance.border_radius);
 
-                let bounds = Rectangle {
-                    x: item_x + item_width - 16.0 - 8.0,
-                    y: bounds.y + (bounds.height / 2.0 - 8.0),
+                let check_bounds = Rectangle {
+                    x: row.x + row.width - 16.0 - 8.0,
+                    y: row.y + (row.height / 2.0 - 8.0),
                     width: 16.0,
                     height: 16.0,
                 };
-                svg::Renderer::draw_svg(renderer, svg_handle, bounds, bounds);
+                svg::Renderer::draw_svg(renderer, svg_handle, check_bounds, check_bounds);
 
-                (appearance.selected_text_color, crate::font::semibold())
+                (appearance.selected_text_color, crate::font::default())
             } else if *hovered_guard == Some(i) {
-                let item_x = bounds.x + appearance.border_width;
-                let item_width = appearance.border_width.mul_add(-2.0, bounds.width);
-
                 renderer.fill_quad(
                     renderer::Quad {
-                        bounds: Rectangle {
-                            x: item_x,
-                            width: item_width,
-                            ..bounds
-                        },
+                        bounds: row,
                         border: Border {
                             radius: appearance.border_radius,
                             ..Default::default()
@@ -667,22 +677,22 @@ where
                 (appearance.text_color, crate::font::default())
             };
 
-            let mut bounds = Rectangle {
-                x: bounds.x + self.padding.left,
-                y: bounds.center_y(),
+            let mut text_bounds = Rectangle {
+                x: row.x + self.padding.left,
+                y: row.center_y(),
                 width: f32::INFINITY,
-                ..bounds
+                height: row.height,
             };
 
             if let Some(handle) = self.icons.get(i) {
                 let icon_bounds = Rectangle {
-                    x: bounds.x,
-                    y: bounds.y + 8.0 - (bounds.height / 2.0),
+                    x: text_bounds.x,
+                    y: text_bounds.y + 8.0 - (text_bounds.height / 2.0),
                     width: 20.0,
                     height: 20.0,
                 };
 
-                bounds.x += 24.0;
+                text_bounds.x += 24.0;
                 icon::draw(renderer, handle, icon_bounds);
             }
 
@@ -690,7 +700,7 @@ where
                 renderer,
                 Text {
                     content: option.as_ref().to_string(),
-                    bounds: bounds.size(),
+                    bounds: text_bounds.size(),
                     size: Pixels(text_size),
                     line_height: self.text_line_height,
                     font,
@@ -700,7 +710,7 @@ where
                     wrapping: text::Wrapping::default(),
                     ellipsize: text::Ellipsize::default(),
                 },
-                bounds.position(),
+                text_bounds.position(),
                 color,
                 *viewport,
             );

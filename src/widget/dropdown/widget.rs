@@ -3,8 +3,9 @@
 // SPDX-License-Identifier: MPL-2.0 AND MIT
 
 use super::Id;
-use super::menu::{self, Menu};
+use super::menu::{self, MENU_PADDING, Menu};
 use crate::widget::icon::{self, Handle};
+use crate::widget::menu::MENU_ITEM_MARGIN_X;
 use crate::{Element, surface};
 use derive_setters::Setters;
 use iced::window;
@@ -597,7 +598,8 @@ pub fn update<
             let measure = |_label: &str, selection_paragraph: &crate::Paragraph| -> f32 {
                 selection_paragraph.min_width().round()
             };
-            let pad_width = padding.x().mul_add(2.0, 16.0);
+            let pad_width =
+                2.0 * MENU_PADDING + 2.0 * MENU_ITEM_MARGIN_X + padding.left + 16.0 + 8.0;
 
             let selections_width = selections
                 .iter()
@@ -765,7 +767,7 @@ where
         .zip(state.selections.iter())
         .map(|(label, selection)| measure(label.as_ref(), selection.raw()))
         .fold(0.0, |next, current| current.max(next));
-    let pad_width = padding.x().mul_add(2.0, 16.0);
+    let pad_width = 2.0 * MENU_PADDING + 2.0 * MENU_ITEM_MARGIN_X + padding.left + 16.0 + 8.0;
 
     let width = selections_width + gap + pad_width + icon_width;
     let is_open = state.is_open.clone();
@@ -841,7 +843,8 @@ where
                 selection_paragraph.min_width().round()
             };
 
-            let pad_width = padding.x().mul_add(2.0, 16.0);
+            let pad_width =
+                2.0 * MENU_PADDING + 2.0 * MENU_ITEM_MARGIN_X + padding.left + 16.0 + 8.0;
 
             let icon_width = if icons.is_empty() { 0.0 } else { 24.0 };
 

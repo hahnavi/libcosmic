@@ -17,17 +17,17 @@ impl dropdown::menu::StyleSheet for Theme {
                 cosmic.background(self.transparent).component.base.into(),
             ),
             border_width: 0.0,
-            border_radius: cosmic.corner_radii.radius_m.into(),
+            border_radius: cosmic.corner_radii.radius_s.into(),
             border_color: Color::TRANSPARENT,
 
             hovered_text_color: cosmic.on_bg_color().into(),
             hovered_background: Background::Color(
-                cosmic.primary(self.transparent).component.hover.into(),
+                cosmic.background(self.transparent).component.hover.into(),
             ),
 
             selected_text_color: cosmic.accent_text_color().into(),
             selected_background: Background::Color(
-                cosmic.primary(self.transparent).component.hover.into(),
+                cosmic.background(self.transparent).component.hover.into(),
             ),
 
             description_color: cosmic
