@@ -20,7 +20,7 @@ pub fn smootherstep(t: f32) -> f32 {
     (6.0 * t.powi(5) - 15.0 * t.powi(4) + 10.0 * t.powi(3)).clamp(0.0, 1.0)
 }
 
-#[derive(Default, Debug)]
+#[derive(Clone, Copy, Default, Debug)]
 pub struct State {
     pub last_change: Option<Instant>,
 }

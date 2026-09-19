@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use std::collections::HashMap;
+use std::time::Instant;
 
 use crate::widget::nav_bar;
 use cosmic_config::CosmicConfigEntry;
@@ -98,6 +99,12 @@ pub struct Core {
 
     pub window: Window,
 
+    pub(crate) context_animation_started: Option<Instant>,
+
+    pub(crate) context_animating: bool,
+
+    pub(crate) context_closing: bool,
+
     #[cfg(feature = "applet")]
     pub applet: crate::applet::Context,
 
@@ -174,6 +181,9 @@ impl Default for Core {
                 width: 0.,
                 border_padding: None,
             },
+            context_animation_started: None,
+            context_animating: false,
+            context_closing: false,
             focused_window: Vec::new(),
             #[cfg(feature = "applet")]
             applet: crate::applet::Context::default(),
@@ -290,13 +300,72 @@ impl Core {
 
     #[cold]
     pub fn set_show_context(&mut self, show: bool) {
-        self.window.show_context = show;
+        if show {
+            if !self.window.show_context || self.context_closing {
+                self.window.show_context = true;
+                self.context_closing = false;
+                self.start_context_animation();
+            }
+        } else if self.window.show_context && !self.context_closing {
+            self.context_closing = true;
+            self.start_context_animation();
+        }
+
         self.is_condensed_update();
         // Ensure nav bar is closed if condensed view and context drawer is opened
         if self.condensed_conflict() {
             self.nav_bar.toggled_condensed = false;
             self.is_condensed_update();
         }
+    }
+
+    #[must_use]
+    #[inline]
+    pub(crate) const fn context_animation_active(&self) -> bool {
+        self.context_animating
+    }
+
+    #[must_use]
+    #[inline]
+    pub(crate) const fn context_animation_started(&self) -> Option<Instant> {
+        self.context_animation_started
+    }
+
+    #[must_use]
+    #[inline]
+    pub(crate) const fn context_drawer_open(&self) -> bool {
+        self.window.show_context && !self.context_closing
+    }
+
+    pub(crate) fn finish_context_animation(&mut self) {
+        let Some(started) = self.context_animation_started else {
+            return;
+        };
+
+        if started.elapsed() < crate::widget::context_drawer::ANIMATION_DURATION {
+            return;
+        }
+
+        let closing = self.context_closing;
+        self.cancel_context_animation();
+
+        if closing {
+            self.window.show_context = false;
+            self.is_condensed_update();
+        }
+    }
+
+    #[inline]
+    fn start_context_animation(&mut self) {
+        self.context_animating = true;
+        self.context_animation_started = Some(Instant::now());
+    }
+
+    #[inline]
+    fn cancel_context_animation(&mut self) {
+        self.context_animating = false;
+        self.context_closing = false;
+        self.context_animation_started = None;
     }
 
     #[inline]
@@ -345,6 +414,7 @@ impl Core {
         // Ensure context drawer is closed if condensed view and nav bar is opened
         if self.condensed_conflict() {
             self.window.show_context = false;
+            self.cancel_context_animation();
             self.is_condensed_update();
             // Sync nav bar state if the view is no longer condensed after closing the context drawer
             if !self.is_condensed {
@@ -649,5 +719,71 @@ impl Core {
             }
         };
         Some(ret)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    /// Pretends the running animation has been running for longer than its duration.
+    fn backdate_animation(core: &mut Core) {
+        core.context_animation_started =
+            Some(Instant::now() - crate::widget::context_drawer::ANIMATION_DURATION * 2);
+    }
+
+    #[test]
+    fn context_drawer_opens_and_closes_with_animation() {
+        let mut core = Core::default();
+        assert!(!core.window.show_context);
+        assert!(!core.context_animation_active());
+
+        // Opening
+        core.set_show_context(true);
+        assert!(core.window.show_context);
+        assert!(core.context_drawer_open());
+        assert!(core.context_animation_active());
+
+        // The animation cannot finish before its duration has passed.
+        core.finish_context_animation();
+        assert!(core.context_animation_active());
+
+        backdate_animation(&mut core);
+        core.finish_context_animation();
+        assert!(core.window.show_context);
+        assert!(core.context_drawer_open());
+        assert!(!core.context_animation_active());
+
+        // Closing keeps the drawer visible until the animation finishes.
+        core.set_show_context(false);
+        assert!(core.window.show_context);
+        assert!(!core.context_drawer_open());
+        assert!(core.context_animation_active());
+
+        backdate_animation(&mut core);
+        core.finish_context_animation();
+        assert!(!core.window.show_context);
+        assert!(!core.context_drawer_open());
+        assert!(!core.context_animation_active());
+    }
+
+    #[test]
+    fn context_drawer_close_animation_can_be_reversed() {
+        let mut core = Core::default();
+        core.set_show_context(true);
+        backdate_animation(&mut core);
+        core.finish_context_animation();
+
+        core.set_show_context(false);
+        assert!(core.context_closing);
+
+        core.set_show_context(true);
+        assert!(core.window.show_context);
+        assert!(core.context_drawer_open());
+        assert!(!core.context_closing);
+        assert!(core.context_animation_active());
+
+        assert!(Duration::ZERO < core.context_animation_started().unwrap().elapsed());
     }
 }

@@ -1,12 +1,13 @@
 // Copyright 2023 System76 <info@system76.com>
 // SPDX-License-Identifier: MPL-2.0
 
+use super::widget::DrawerAnimation;
 use crate::Element;
 
 use iced::advanced::layout::{self, Layout};
 use iced::advanced::widget::{self, Operation};
 use iced::advanced::{Clipboard, Shell, overlay, renderer};
-use iced::{Event, Point, Size, mouse};
+use iced::{Event, Point, Rectangle, Size, mouse};
 use iced_core::{Renderer, touch};
 
 pub(super) struct Overlay<'a, 'b, Message> {
@@ -14,6 +15,20 @@ pub(super) struct Overlay<'a, 'b, Message> {
     pub(super) content: &'b mut Element<'a, Message>,
     pub(super) tree: &'b mut widget::Tree,
     pub(super) width: f32,
+    pub(super) animation: &'b mut DrawerAnimation,
+    pub(super) open: bool,
+    pub(super) animating: bool,
+    pub(super) on_close: Option<&'b Message>,
+}
+
+fn is_dismiss_event(event: &Event, cursor: mouse::Cursor, bounds: Rectangle) -> bool {
+    let position = match event {
+        Event::Mouse(mouse::Event::ButtonPressed(_)) => cursor.position(),
+        Event::Touch(touch::Event::FingerPressed { position, .. }) => Some(*position),
+        _ => return false,
+    };
+
+    position.is_some_and(|position| !bounds.contains(position))
 }
 
 impl<Message> overlay::Overlay<Message, crate::Theme, crate::Renderer> for Overlay<'_, '_, Message>
@@ -32,11 +47,14 @@ where
             .layout(self.tree, renderer, &limits);
         let node_size = node.size();
 
+        let progress = self.animation.progress(self.open, self.animating);
+        let hidden_offset = (1.0 - progress) * (node_size.width + 8.0);
+
         node.move_to(Point {
             x: if bounds.width > node_size.width - 8.0 {
-                bounds.width - node_size.width - 8.0
+                bounds.width - node_size.width - 8.0 + hidden_offset
             } else {
-                0.0
+                hidden_offset
             },
             y: if bounds.height > node_size.height - 8.0 {
                 bounds.height - node_size.height - 8.0
@@ -55,6 +73,21 @@ where
         clipboard: &mut dyn Clipboard,
         shell: &mut Shell<'_, Message>,
     ) {
+        if self.animation.active() {
+            shell.request_redraw();
+        }
+
+        let drawer_bounds = layout
+            .children()
+            .next()
+            .map_or_else(|| layout.bounds(), |pane| pane.bounds());
+
+        if is_dismiss_event(event, cursor, drawer_bounds)
+            && let Some(on_close) = self.on_close
+        {
+            shell.publish(on_close.clone());
+        }
+
         self.content.as_widget_mut().update(
             self.tree,
             event,
@@ -146,5 +179,75 @@ where
             viewport,
             iced::Vector::default(),
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use iced::mouse::Button;
+
+    const BOUNDS: Rectangle = Rectangle {
+        x: 100.0,
+        y: 100.0,
+        width: 200.0,
+        height: 200.0,
+    };
+
+    fn cursor_at(position: Point) -> mouse::Cursor {
+        mouse::Cursor::Available(position)
+    }
+
+    #[test]
+    fn dismisses_on_press_outside() {
+        assert!(is_dismiss_event(
+            &Event::Mouse(mouse::Event::ButtonPressed(Button::Left)),
+            cursor_at(Point::new(50.0, 50.0)),
+            BOUNDS,
+        ));
+
+        assert!(is_dismiss_event(
+            &Event::Touch(touch::Event::FingerPressed {
+                id: touch::Finger(0),
+                position: Point::new(50.0, 50.0),
+            }),
+            mouse::Cursor::Unavailable,
+            BOUNDS,
+        ));
+    }
+
+    #[test]
+    fn ignores_presses_inside() {
+        assert!(!is_dismiss_event(
+            &Event::Mouse(mouse::Event::ButtonPressed(Button::Left)),
+            cursor_at(Point::new(150.0, 150.0)),
+            BOUNDS,
+        ));
+
+        assert!(!is_dismiss_event(
+            &Event::Touch(touch::Event::FingerPressed {
+                id: touch::Finger(0),
+                position: Point::new(150.0, 150.0),
+            }),
+            mouse::Cursor::Unavailable,
+            BOUNDS,
+        ));
+    }
+
+    #[test]
+    fn ignores_other_events_outside() {
+        assert!(!is_dismiss_event(
+            &Event::Mouse(mouse::Event::CursorMoved {
+                position: Point::new(50.0, 50.0),
+            }),
+            cursor_at(Point::new(50.0, 50.0)),
+            BOUNDS,
+        ));
+
+        assert!(!is_dismiss_event(
+            &Event::Mouse(mouse::Event::ButtonReleased(Button::Left)),
+            cursor_at(Point::new(50.0, 50.0)),
+            BOUNDS,
+        ));
     }
 }

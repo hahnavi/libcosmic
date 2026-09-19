@@ -704,6 +704,14 @@ where
             );
         }
 
+        if self.app.core().context_animation_active() {
+            subscriptions.push(
+                iced::time::every(crate::widget::context_drawer::ANIMATION_DURATION).map(|_| {
+                    crate::Action::Cosmic(Action::ContextDrawerAnimationFinished)
+                }),
+            );
+        }
+
         #[cfg(feature = "single-instance")]
         if self.app.core().single_instance {
             subscriptions.push(crate::dbus_activation::subscription::<T>());
@@ -882,6 +890,10 @@ impl<T: Application> Cosmic<T> {
             Action::ContextDrawer(show) => {
                 self.app.core_mut().set_show_context(show);
                 return self.app.on_context_drawer();
+            }
+
+            Action::ContextDrawerAnimationFinished => {
+                self.app.core_mut().finish_context_animation();
             }
 
             Action::Drag => return self.app.core().drag(None),

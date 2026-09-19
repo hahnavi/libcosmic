@@ -531,7 +531,7 @@ pub trait ApplicationExt: Application {
     /// Get the title of a window.
     fn title(&self, id: window::Id) -> &str;
 
-    /// Set the context drawer visibility.
+    /// Set the context drawer visibility, animating it open or closed.
     fn set_show_context(&mut self, show: bool) {
         self.core_mut().set_show_context(show);
     }
@@ -618,6 +618,8 @@ impl<App: Application> ApplicationExt for App {
         let maximized = core.window.is_maximized;
         let content_container = core.window.content_container;
         let show_context = core.window.show_context;
+        let context_drawer_open = core.context_drawer_open();
+        let context_drawer_animating = core.context_animation_active();
         let nav_bar_active = core.nav_bar_active();
         let focused = core
             .focus_chain()
@@ -666,6 +668,7 @@ impl<App: Application> ApplicationExt for App {
                 let context_width = core.context_width(has_nav);
                 if core.window.context_is_overlay && show_context {
                     if let Some(context) = self.context_drawer() {
+                        let on_dismiss = context.on_close.clone();
                         widgets.push(
                             crate::widget::context_drawer(
                                 context.title,
@@ -677,6 +680,9 @@ impl<App: Application> ApplicationExt for App {
                                 context.content,
                                 context_width,
                             )
+                            .open(context_drawer_open)
+                            .animating(context_drawer_animating)
+                            .on_close_maybe(Some(on_dismiss))
                             .apply(|drawer| {
                                 Element::from(id_container(
                                     drawer,
@@ -712,11 +718,12 @@ impl<App: Application> ApplicationExt for App {
                                 context.content,
                                 context.on_close,
                                 context_width,
+                                context_drawer_open,
+                                context_drawer_animating,
                             )
                             .apply(Element::from)
                             .map(crate::Action::App)
                             .apply(container)
-                            .width(context_width)
                             .apply(|drawer| {
                                 Element::from(id_container(
                                     drawer,

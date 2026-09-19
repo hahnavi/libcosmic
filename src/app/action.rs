@@ -20,6 +20,8 @@ pub enum Action {
     Close,
     /// Closes or shows the context drawer.
     ContextDrawer(bool),
+    /// Finalizes the context drawer animation once it is over.
+    ContextDrawerAnimationFinished,
     #[cfg(feature = "single-instance")]
     DbusConnection(zbus::Connection),
     /// Requests to drag the window.
