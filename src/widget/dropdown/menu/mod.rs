@@ -17,7 +17,7 @@ use iced_core::text::{self, Text};
 use iced_core::widget::Tree;
 use iced_core::{
     Border, Clipboard, Element, Length, Padding, Pixels, Point, Rectangle, Renderer, Shadow, Shell,
-    Size, Vector, Widget, alignment, mouse, overlay, renderer, svg, touch,
+    Size, Widget, alignment, mouse, overlay, renderer, svg, touch,
 };
 use iced_widget::scrollable::Scrollable;
 
@@ -223,7 +223,7 @@ impl<'a, Message: Clone + 'a> Overlay<'a, Message> {
         let limits = layout::Limits::new(
             Size::ZERO,
             Size::new(
-                bounds.width - self.position.x,
+                bounds.width,
                 if space_below > space_above {
                     space_below
                 } else {
@@ -238,11 +238,20 @@ impl<'a, Message: Clone + 'a> Overlay<'a, Message> {
             .with_data_mut(|tree| self.container.layout(tree, renderer, &limits));
 
         let node_size = node.size();
-        node.move_to(if space_below > space_above {
-            self.position + Vector::new(0.0, self.target_height)
-        } else {
-            self.position - Vector::new(0.0, node_size.height)
-        })
+
+        let x = self
+            .position
+            .x
+            .min((bounds.width - node_size.width).max(0.0));
+
+        node.move_to(Point::new(
+            x,
+            if space_below > space_above {
+                self.position.y + self.target_height
+            } else {
+                self.position.y - node_size.height
+            },
+        ))
     }
 
     fn _update(
@@ -685,11 +694,12 @@ where
             };
 
             if let Some(handle) = self.icons.get(i) {
+                let icon_size = 20.0;
                 let icon_bounds = Rectangle {
                     x: text_bounds.x,
-                    y: text_bounds.y + 8.0 - (text_bounds.height / 2.0),
-                    width: 20.0,
-                    height: 20.0,
+                    y: row.center_y() - icon_size / 2.0,
+                    width: icon_size,
+                    height: icon_size,
                 };
 
                 text_bounds.x += 24.0;
