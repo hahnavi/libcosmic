@@ -59,10 +59,15 @@ impl Text {
     }
 }
 
+const MIN_HORIZONTAL_PADDING: u16 = 14;
+const MIN_HEIGHT: u16 = 28;
+
 impl<Message> Button<'_, Message> {
     pub fn new(text: Text) -> Self {
         let guard = crate::theme::THEME.lock().unwrap();
         let theme = guard.cosmic();
+        let horizontal_padding = theme.space_s().max(MIN_HORIZONTAL_PADDING);
+        let height = theme.space_l().max(MIN_HEIGHT);
         Self {
             id: Id::unique(),
             label: Cow::Borrowed(""),
@@ -73,8 +78,8 @@ impl<Message> Button<'_, Message> {
             tooltip: Cow::Borrowed(""),
             on_press: None,
             width: Length::Shrink,
-            height: Length::Fixed(theme.space_l().into()),
-            padding: Padding::from([0, theme.space_s()]),
+            height: Length::Fixed(height.into()),
+            padding: Padding::from([0, horizontal_padding]),
             spacing: theme.space_xxxs(),
             icon_size: 16,
             line_height: 20,
