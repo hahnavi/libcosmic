@@ -620,7 +620,8 @@ impl<App: Application> ApplicationExt for App {
         let show_context = core.window.show_context;
         let context_drawer_open = core.context_drawer_open();
         let context_drawer_animating = core.context_animation_active();
-        let nav_bar_active = core.nav_bar_active();
+        let nav_bar_open = core.nav_bar_open();
+        let nav_bar_animating = core.nav_bar_animation_active();
         let focused = core
             .focus_chain()
             .iter()
@@ -631,9 +632,17 @@ impl<App: Application> ApplicationExt for App {
             .border_padding
             .unwrap_or(if maximized { 8 } else { 7 });
 
+        let nav_bar_element = self.nav_bar();
+        let has_nav = nav_bar_element.is_some();
+        let nav_bar_min_width = if content_container {
+            f32::from(border_padding)
+        } else {
+            0.0
+        };
+
         let main_content_padding = if content_container {
             let right_padding = if show_context { 0 } else { border_padding };
-            let left_padding = if nav_bar_active { 0 } else { border_padding };
+            let left_padding = if has_nav { 0 } else { border_padding };
 
             [0, right_padding, 0, left_padding]
         } else {
@@ -644,22 +653,23 @@ impl<App: Application> ApplicationExt for App {
             let mut widgets = Vec::with_capacity(3);
 
             // Insert nav bar onto the left side of the window.
-            let has_nav = if let Some(nav) = self.nav_bar() {
+            if let Some(nav) = nav_bar_element {
                 let nav = id_container(nav, iced_core::id::Id::new("COSMIC_nav_bar"));
+                let nav = container(nav).padding([
+                    0,
+                    if is_condensed { border_padding } else { 8 },
+                    border_padding,
+                    border_padding,
+                ]);
+
                 widgets.push(
-                    container(nav)
-                        .padding([
-                            0,
-                            if is_condensed { border_padding } else { 8 },
-                            border_padding,
-                            border_padding,
-                        ])
+                    crate::widget::slide::Slide::new(nav, nav_bar_open, nav_bar_animating)
+                        .min_width(nav_bar_min_width)
                         .into(),
                 );
-                true
             } else {
-                false
-            };
+                widgets.push(space::horizontal().width(Length::Shrink).into());
+            }
 
             if self.nav_model().is_none() || core.show_content() {
                 let main_content = self.view();
@@ -792,7 +802,7 @@ impl<App: Application> ApplicationExt for App {
 
                     if self.nav_model().is_some() {
                         let toggle = crate::widget::nav_bar_toggle()
-                            .active(core.nav_bar_active())
+                            .active(nav_bar_open)
                             .selected(focused)
                             .on_toggle(if is_condensed {
                                 crate::Action::Cosmic(Action::ToggleNavBarCondensed)

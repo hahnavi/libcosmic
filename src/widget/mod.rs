@@ -139,6 +139,8 @@ pub mod context_drawer;
 #[doc(inline)]
 pub use context_drawer::{ContextDrawer, context_drawer};
 
+pub(crate) mod slide;
+
 pub mod layer_container;
 #[doc(inline)]
 pub use layer_container::{LayerContainer, layer_container};

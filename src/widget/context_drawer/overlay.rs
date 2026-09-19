@@ -1,8 +1,8 @@
 // Copyright 2023 System76 <info@system76.com>
 // SPDX-License-Identifier: MPL-2.0
 
-use super::widget::DrawerAnimation;
 use crate::Element;
+use crate::widget::slide::SlideAnimation;
 
 use iced::advanced::layout::{self, Layout};
 use iced::advanced::widget::{self, Operation};
@@ -15,7 +15,7 @@ pub(super) struct Overlay<'a, 'b, Message> {
     pub(super) content: &'b mut Element<'a, Message>,
     pub(super) tree: &'b mut widget::Tree,
     pub(super) width: f32,
-    pub(super) animation: &'b mut DrawerAnimation,
+    pub(super) animation: &'b mut SlideAnimation,
     pub(super) open: bool,
     pub(super) animating: bool,
     pub(super) on_close: Option<&'b Message>,

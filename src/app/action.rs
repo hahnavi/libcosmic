@@ -38,6 +38,8 @@ pub enum Action {
     NavBar(nav_bar::Id),
     /// Activates a context menu for an item from the nav bar.
     NavBarContext(nav_bar::Id),
+    /// Finalizes the nav bar animation once it is over.
+    NavBarAnimationFinished,
     /// A new window was opened.
     Opened(iced::window::Id),
     /// Set scaling factor

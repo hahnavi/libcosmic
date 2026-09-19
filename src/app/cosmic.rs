@@ -706,9 +706,15 @@ where
 
         if self.app.core().context_animation_active() {
             subscriptions.push(
-                iced::time::every(crate::widget::context_drawer::ANIMATION_DURATION).map(|_| {
-                    crate::Action::Cosmic(Action::ContextDrawerAnimationFinished)
-                }),
+                iced::time::every(crate::widget::context_drawer::ANIMATION_DURATION)
+                    .map(|_| crate::Action::Cosmic(Action::ContextDrawerAnimationFinished)),
+            );
+        }
+
+        if self.app.core().nav_bar_animation_active() {
+            subscriptions.push(
+                iced::time::every(crate::widget::slide::ANIMATION_DURATION)
+                    .map(|_| crate::Action::Cosmic(Action::NavBarAnimationFinished)),
             );
         }
 
@@ -910,6 +916,10 @@ impl<T: Application> Cosmic<T> {
             Action::NavBarContext(key) => {
                 self.app.core_mut().nav_bar_set_context(key);
                 return self.app.on_nav_context(key);
+            }
+
+            Action::NavBarAnimationFinished => {
+                self.app.core_mut().finish_nav_bar_animation();
             }
 
             Action::ToggleNavBar => {

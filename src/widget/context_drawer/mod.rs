@@ -7,13 +7,12 @@ mod overlay;
 
 mod widget;
 use std::borrow::Cow;
-use std::time::Duration;
 
 pub use widget::ContextDrawer;
 
 use crate::Element;
 
-pub(crate) const ANIMATION_DURATION: Duration = Duration::from_millis(200);
+pub(crate) use crate::widget::slide::ANIMATION_DURATION;
 
 /// An overlayed widget that attaches a toggleable context drawer to the view.
 pub fn context_drawer<'a, Message: Clone + 'static, Content, Drawer>(

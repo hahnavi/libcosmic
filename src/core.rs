@@ -16,12 +16,16 @@ use slotmap::Key;
 use crate::Theme;
 
 /// Status of the nav bar and its panels.
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Clone)]
 pub struct NavBar {
     active: bool,
     context_id: crate::widget::nav_bar::Id,
     toggled: bool,
     toggled_condensed: bool,
+    animation_started: Option<Instant>,
+    animating: bool,
+    closing: bool,
 }
 
 /// COSMIC-specific settings for windows.
@@ -149,6 +153,9 @@ impl Default for Core {
                 context_id: crate::widget::nav_bar::Id::null(),
                 toggled: true,
                 toggled_condensed: false,
+                animation_started: None,
+                animating: false,
+                closing: false,
             },
             scale_factor: 1.0,
             title: HashMap::new(),
@@ -321,7 +328,7 @@ impl Core {
 
     #[must_use]
     #[inline]
-    pub(crate) const fn context_animation_active(&self) -> bool {
+    pub const fn context_animation_active(&self) -> bool {
         self.context_animating
     }
 
@@ -333,7 +340,7 @@ impl Core {
 
     #[must_use]
     #[inline]
-    pub(crate) const fn context_drawer_open(&self) -> bool {
+    pub const fn context_drawer_open(&self) -> bool {
         self.window.show_context && !self.context_closing
     }
 
@@ -373,11 +380,45 @@ impl Core {
         self.main_window_id().is_some_and(|main_id| main_id == id)
     }
 
-    /// Whether the nav panel is visible or not
+    /// Whether the nav panel is visible or not, including while it animates away
     #[must_use]
     #[inline]
     pub const fn nav_bar_active(&self) -> bool {
         self.nav_bar.active
+    }
+
+    /// Whether the nav panel is toggled on, ignoring an in-flight close animation
+    #[must_use]
+    #[inline]
+    pub(crate) const fn nav_bar_open(&self) -> bool {
+        self.nav_bar.active && !self.nav_bar.closing
+    }
+
+    #[must_use]
+    #[inline]
+    pub(crate) const fn nav_bar_animation_active(&self) -> bool {
+        self.nav_bar.animating
+    }
+
+    /// Finalizes the nav bar animation once it is over, hiding the nav bar if it was closing.
+    pub(crate) fn finish_nav_bar_animation(&mut self) {
+        let Some(started) = self.nav_bar.animation_started else {
+            return;
+        };
+
+        if started.elapsed() < crate::widget::slide::ANIMATION_DURATION {
+            return;
+        }
+
+        let closing = self.nav_bar.closing;
+        self.cancel_nav_bar_animation();
+
+        if closing {
+            self.nav_bar.active = false;
+        }
+
+        // Catch up if the derived state changed while the animation was running
+        self.nav_bar_update();
     }
 
     #[inline]
@@ -410,7 +451,7 @@ impl Core {
     #[cold]
     pub(crate) fn nav_bar_set_toggled_condensed(&mut self, toggled: bool) {
         self.nav_bar.toggled_condensed = toggled;
-        self.nav_bar_update();
+        self.nav_bar_update_animated();
         // Ensure context drawer is closed if condensed view and nav bar is opened
         if self.condensed_conflict() {
             self.window.show_context = false;
@@ -419,18 +460,61 @@ impl Core {
             // Sync nav bar state if the view is no longer condensed after closing the context drawer
             if !self.is_condensed {
                 self.nav_bar.toggled = toggled;
-                self.nav_bar_update();
+                self.nav_bar_update_animated();
             }
         }
     }
 
+    /// Recomputes the nav bar visibility after derived state changed, without animating.
     #[inline]
     pub(crate) fn nav_bar_update(&mut self) {
+        // An in-flight animation owns the transition until it finishes
+        if self.nav_bar.animating {
+            return;
+        }
+
         self.nav_bar.active = if self.is_condensed {
             self.nav_bar.toggled_condensed
         } else {
             self.nav_bar.toggled
         };
+        self.nav_bar.closing = false;
+    }
+
+    /// Applies the toggled state, animating the nav bar in or out.
+    #[inline]
+    fn nav_bar_update_animated(&mut self) {
+        let toggled = if self.is_condensed {
+            self.nav_bar.toggled_condensed
+        } else {
+            self.nav_bar.toggled
+        };
+
+        if toggled {
+            // Reversing an in-flight close animation keeps the nav bar in place
+            if !self.nav_bar.active || self.nav_bar.closing {
+                self.nav_bar.active = true;
+                self.nav_bar.closing = false;
+                self.start_nav_bar_animation();
+            }
+        } else if self.nav_bar.active && !self.nav_bar.closing {
+            // Keep the nav bar in the view while it animates away
+            self.nav_bar.closing = true;
+            self.start_nav_bar_animation();
+        }
+    }
+
+    #[inline]
+    fn start_nav_bar_animation(&mut self) {
+        self.nav_bar.animating = true;
+        self.nav_bar.animation_started = Some(Instant::now());
+    }
+
+    #[inline]
+    fn cancel_nav_bar_animation(&mut self) {
+        self.nav_bar.animating = false;
+        self.nav_bar.closing = false;
+        self.nav_bar.animation_started = None;
     }
 
     #[inline]
@@ -785,5 +869,82 @@ mod tests {
         assert!(core.context_animation_active());
 
         assert!(Duration::ZERO < core.context_animation_started().unwrap().elapsed());
+    }
+
+    /// Pretends the running animation has been running for longer than its duration.
+    fn backdate_nav_animation(core: &mut Core) {
+        core.nav_bar.animation_started =
+            Some(Instant::now() - crate::widget::slide::ANIMATION_DURATION * 2);
+    }
+
+    #[test]
+    fn nav_bar_closes_and_opens_with_animation() {
+        let mut core = Core::default();
+        assert!(core.nav_bar_active());
+        assert!(core.nav_bar_open());
+        assert!(!core.nav_bar_animation_active());
+
+        // Closing keeps the nav bar in the view until the animation finishes.
+        core.nav_bar_set_toggled(false);
+        assert!(core.nav_bar_active());
+        assert!(!core.nav_bar_open());
+        assert!(core.nav_bar_animation_active());
+
+        // The animation cannot finish before its duration has passed.
+        core.finish_nav_bar_animation();
+        assert!(core.nav_bar_active());
+
+        backdate_nav_animation(&mut core);
+        core.finish_nav_bar_animation();
+        assert!(!core.nav_bar_active());
+        assert!(!core.nav_bar_open());
+        assert!(!core.nav_bar_animation_active());
+
+        // Opening
+        core.nav_bar_set_toggled(true);
+        assert!(core.nav_bar_active());
+        assert!(core.nav_bar_open());
+        assert!(core.nav_bar_animation_active());
+
+        backdate_nav_animation(&mut core);
+        core.finish_nav_bar_animation();
+        assert!(core.nav_bar_active());
+        assert!(core.nav_bar_open());
+        assert!(!core.nav_bar_animation_active());
+    }
+
+    #[test]
+    fn nav_bar_close_animation_can_be_reversed() {
+        let mut core = Core::default();
+        core.nav_bar_set_toggled(false);
+        assert!(core.nav_bar.closing);
+
+        core.nav_bar_set_toggled(true);
+        assert!(core.nav_bar_active());
+        assert!(core.nav_bar_open());
+        assert!(!core.nav_bar.closing);
+        assert!(core.nav_bar_animation_active());
+
+        backdate_nav_animation(&mut core);
+        core.finish_nav_bar_animation();
+        assert!(core.nav_bar_active());
+        assert!(core.nav_bar_open());
+        assert!(!core.nav_bar_animation_active());
+    }
+
+    #[test]
+    fn nav_bar_settles_without_animation_on_window_resize() {
+        let mut core = Core::default();
+
+        core.set_window_width(1200.0);
+        assert!(!core.is_condensed());
+        assert!(core.nav_bar_active());
+        assert!(!core.nav_bar_animation_active());
+
+        // A window too small for the nav bar hides it immediately.
+        core.set_window_width(320.0);
+        assert!(core.is_condensed());
+        assert!(!core.nav_bar_active());
+        assert!(!core.nav_bar_animation_active());
     }
 }
