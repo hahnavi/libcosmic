@@ -946,8 +946,7 @@ fn preload_fonts(default_font: iced_core::Font) {
                 buffer.set_size(Some(800.0), Some(100.0));
                 buffer.set_text(
                     "The quick brown fox jumps over the lazy dog 0123456789",
-                    &cosmic_text::Attrs::new()
-                        .family(cosmic_text::Family::Name(name)),
+                    &cosmic_text::Attrs::new().family(cosmic_text::Family::Name(name)),
                     cosmic_text::Shaping::Advanced,
                     None,
                 );

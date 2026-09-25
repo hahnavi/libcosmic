@@ -202,19 +202,13 @@ where
         let mut content_width: f32 = 0.0;
         let mut cursor = 0.0;
 
-        for (i, (child, state)) in self
-            .children
-            .iter_mut()
-            .zip(&mut tree.children)
-            .enumerate()
-        {
+        for (i, (child, state)) in self.children.iter_mut().zip(&mut tree.children).enumerate() {
             if i > 0 {
                 cursor += self.spacing;
             }
 
             let remaining = (max_height - cursor).max(0.0);
-            let child_limits =
-                layout::Limits::new(Size::ZERO, Size::new(inner_width, remaining));
+            let child_limits = layout::Limits::new(Size::ZERO, Size::new(inner_width, remaining));
             let mut node = child.as_widget_mut().layout(state, renderer, &child_limits);
 
             let natural = node.size().height;
@@ -223,7 +217,9 @@ where
                     Size::ZERO,
                     Size::new(inner_width, natural - 2.0 * MENU_ITEM_MARGIN_Y),
                 );
-                node = child.as_widget_mut().layout(state, renderer, &clamped_limits);
+                node = child
+                    .as_widget_mut()
+                    .layout(state, renderer, &clamped_limits);
             }
 
             let x = match self.align {

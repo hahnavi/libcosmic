@@ -20,9 +20,7 @@ pub fn identifier(id: window::Id) -> Task<Option<crate::dialog::ashpd::WindowIde
 }
 
 #[cfg(all(xdg_portal, wayland_platform))]
-fn identifier_wayland(
-    id: window::Id,
-) -> Task<Option<crate::dialog::ashpd::WindowIdentifier>> {
+fn identifier_wayland(id: window::Id) -> Task<Option<crate::dialog::ashpd::WindowIdentifier>> {
     use crate::iced::window::raw_window_handle::{
         HasDisplayHandle, HasWindowHandle, RawDisplayHandle, RawWindowHandle,
     };
@@ -48,8 +46,8 @@ fn identifier_wayland(
         }
     })
     .then(move |display| match display {
-        Display::Wayland => {
-            iced_winit::platform_specific::commands::dialog::window_surface(id).then(|surface| {
+        Display::Wayland => iced_winit::platform_specific::commands::dialog::window_surface(id)
+            .then(|surface| {
                 crate::task::future(async move {
                     match surface {
                         Some(surface) => {
@@ -58,8 +56,7 @@ fn identifier_wayland(
                         None => None,
                     }
                 })
-            })
-        }
+            }),
         Display::X11(xid) => crate::task::future(async move {
             Some(crate::dialog::ashpd::WindowIdentifier::from_xid(xid))
         }),
@@ -93,10 +90,7 @@ fn identifier_x11(id: window::Id) -> Task<Option<crate::dialog::ashpd::WindowIde
 pub fn set_dialog(id: window::Id, parent: Option<String>, modal: bool) -> Task<()> {
     use iced_winit::platform_specific::commands::dialog;
 
-    Task::batch([
-        dialog::set_parent(id, parent),
-        dialog::set_modal(id, modal),
-    ])
+    Task::batch([dialog::set_parent(id, parent), dialog::set_modal(id, modal)])
 }
 
 /// No-op on platforms without Wayland dialog support.

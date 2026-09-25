@@ -693,11 +693,10 @@ where
                 // The popup is only created on Wayland; other platforms use
                 // the in-window overlay.
                 #[cfg(wayland_platform)]
-                let popup_supported = matches!(
-                    WINDOWING_SYSTEM.get(),
-                    Some(WindowingSystem::Wayland)
-                ) && self.on_surface_action.is_some()
-                    && self.window_id != window::Id::NONE;
+                let popup_supported =
+                    matches!(WINDOWING_SYSTEM.get(), Some(WindowingSystem::Wayland))
+                        && self.on_surface_action.is_some()
+                        && self.window_id != window::Id::NONE;
                 #[cfg(not(wayland_platform))]
                 let popup_supported = false;
 
