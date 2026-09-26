@@ -6,6 +6,7 @@ use std::sync::Arc;
 
 use super::menu_inner::{
     CloseCondition, Direction, ItemHeight, ItemWidth, Menu, MenuState, PathHighlight,
+    close_innermost,
 };
 use super::menu_tree::MenuTree;
 use crate::Renderer;
@@ -649,38 +650,24 @@ where
         });
 
         match event {
-            event::Event::Keyboard(keyboard::Event::KeyPressed {
-                key: keyboard::Key::Named(keyboard::key::Named::Escape),
+            event::Event::Keyboard(iced_widget::core::keyboard::Event::KeyPressed {
+                key:
+                    iced_widget::core::keyboard::Key::Named(
+                        iced_widget::core::keyboard::key::Named::Escape,
+                    ),
                 ..
             }) if open => {
-                // Close all menus when `Escape` is pressed.
-                #[cfg_attr(not(wayland_platform), allow(unused_variables))]
-                let root_popup: Option<window::Id> = my_state.inner.with_data_mut(|state| {
-                    state.reset();
+                my_state.inner.with_data_mut(|state| {
                     state.view_cursor = view_cursor;
-
-                    // Keep the popup mappings: the synthetic `PopupEvent::Done`
-                    // for the destroyed root popup clears the whole chain.
-                    #[cfg(wayland_platform)]
-                    {
-                        state.popup_id.get(&self.window_id).copied()
-                    }
-                    #[cfg(not(wayland_platform))]
-                    {
-                        None
-                    }
+                    let handler = self.on_surface_action.as_ref();
+                    close_innermost(state, &mut |id| {
+                        if let Some(handler) = handler {
+                            shell.publish((handler)(crate::surface::action::destroy_popup(id)));
+                        }
+                    });
                 });
-
                 shell.capture_event();
                 shell.request_redraw();
-
-                #[cfg(wayland_platform)]
-                if matches!(WINDOWING_SYSTEM.get(), Some(WindowingSystem::Wayland))
-                    && let (Some(id), Some(handler)) = (root_popup, self.on_surface_action.as_ref())
-                {
-                    // Destroying the root popup dismisses its descendants with it.
-                    shell.publish((handler)(crate::surface::action::destroy_popup(id)));
-                }
             }
             Mouse(mouse::Event::ButtonPressed(Left))
             | Touch(touch::Event::FingerPressed { .. })

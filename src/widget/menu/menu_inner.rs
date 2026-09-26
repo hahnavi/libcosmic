@@ -575,6 +575,45 @@ impl<'b, Message: Clone + 'static> Menu<'b, Message> {
     }
 
     #[allow(clippy::too_many_lines)]
+    fn close_all(
+        &self,
+        state: &mut super::menu_bar::MenuBarStateInner,
+        shell: &mut Shell<'_, Message>,
+    ) {
+        #[cfg(wayland_platform)]
+        if matches!(WINDOWING_SYSTEM.get(), Some(WindowingSystem::Wayland))
+            && let Some(handler) = self.on_surface_action.as_ref()
+        {
+            let mut root = self.window_id;
+            let mut depth = self.depth;
+            while let Some(parent) = state.popup_id.iter().find(|(_, v)| **v == root) {
+                if depth == 0 {
+                    break;
+                }
+                root = *parent.0;
+                depth = depth.saturating_sub(1);
+            }
+            shell.publish((handler)(crate::surface::Action::DestroyPopup(root)));
+        }
+
+        state.reset();
+    }
+
+    /// Close the innermost open menu, see [`close_innermost`].
+    /// Used when pressing `esc`.
+    fn close(
+        &self,
+        state: &mut super::menu_bar::MenuBarStateInner,
+        shell: &mut Shell<'_, Message>,
+    ) {
+        let handler = self.on_surface_action.as_ref();
+        close_innermost(state, &mut |id| {
+            if let Some(handler) = handler {
+                shell.publish((handler)(crate::surface::Action::DestroyPopup(id)));
+            }
+        });
+    }
+
     fn update(
         &mut self,
         event: &event::Event,
@@ -598,15 +637,19 @@ impl<'b, Message: Clone + 'static> Menu<'b, Message> {
             return None;
         }
 
-        // Close all menus when `Escape` is pressed.
+        // Close the innermost open menu when `Escape` is pressed.
         if let event::Event::Keyboard(keyboard::Event::KeyPressed {
             key: keyboard::Key::Named(keyboard::key::Named::Escape),
             ..
         }) = event
             && self.tree.inner.with_data(|data| data.open)
         {
-            self.close_menus(shell, view_cursor);
+            self.tree.inner.with_data_mut(|state| {
+                state.view_cursor = view_cursor;
+                self.close(state, shell);
+            });
             shell.capture_event();
+            shell.request_redraw();
             return None;
         }
 
@@ -677,6 +720,19 @@ impl<'b, Message: Clone + 'static> Menu<'b, Message> {
         );
 
         match event {
+            event::Event::Keyboard(iced_widget::core::keyboard::Event::KeyPressed {
+                key:
+                    iced_widget::core::keyboard::Key::Named(
+                        iced_widget::core::keyboard::key::Named::Escape,
+                    ),
+                ..
+            }) if !self.is_overlay => {
+                self.tree
+                    .inner
+                    .with_data_mut(|state| self.close(state, shell));
+                shell.capture_event();
+            }
+
             Mouse(WheelScrolled { delta }) => process_scroll_events(
                 self,
                 shell,
@@ -752,27 +808,7 @@ impl<'b, Message: Clone + 'static> Menu<'b, Message> {
                         needs_reset |= self.close_condition.click_outside && !is_inside;
 
                         if needs_reset {
-                            #[cfg(wayland_platform)]
-                            if matches!(WINDOWING_SYSTEM.get(), Some(WindowingSystem::Wayland))
-                                && let Some(handler) = self.on_surface_action.as_ref()
-                            {
-                                let mut root = self.window_id;
-                                let mut depth = self.depth;
-                                while let Some(parent) =
-                                    state.popup_id.iter().find(|(_, v)| **v == root)
-                                {
-                                    // parent of root popup is the window, so we stop.
-                                    if depth == 0 {
-                                        break;
-                                    }
-                                    root = *parent.0;
-                                    depth = depth.saturating_sub(1);
-                                }
-                                shell
-                                    .publish((handler)(crate::surface::Action::DestroyPopup(root)));
-                            }
-
-                            state.reset();
+                            self.close_all(state, shell);
                         }
                     }
 
@@ -1851,6 +1887,44 @@ fn get_children_layout<Message>(
     };
 
     (Size::new(width, height), child_positions, child_sizes)
+}
+
+/// Close the innermost open menu level
+pub(super) fn close_innermost(
+    state: &mut super::menu_bar::MenuBarStateInner,
+    destroy: &mut dyn FnMut(window::Id),
+) {
+    let outermost = state
+        .popup_id
+        .iter()
+        .find(|(parent, _)| !state.popup_id.values().any(|id| id == *parent))
+        .map(|(_, id)| *id);
+    let innermost = state
+        .popup_id
+        .values()
+        .find(|id| !state.popup_id.contains_key(id))
+        .copied();
+
+    let levels = state.menu_states.len();
+    if levels <= 1 {
+        if let Some(id) = outermost {
+            destroy(id);
+        }
+        state.reset();
+        return;
+    }
+
+    state.active_root.truncate(levels - 1);
+    state.menu_states.truncate(levels - 1);
+
+    // Forget the parent's hovered item, so hovering it again reopens the submenu.
+    if let Some(parent) = state.menu_states.last_mut() {
+        parent.index = None;
+    }
+    if let Some(id) = innermost {
+        state.popup_id.retain(|_, popup| *popup != id);
+        destroy(id);
+    }
 }
 
 /// Returns the index of the item at the given `bound` offset using the
