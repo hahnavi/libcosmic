@@ -608,6 +608,17 @@ where
         state.buttons_offset < self.model.order.len() - state.buttons_visible
     }
 
+    fn centers_tab_title(&self, button: Entity) -> bool {
+        !Self::VERTICAL
+            && self.button_alignment == Alignment::Center
+            && matches!(self.style, crate::theme::SegmentedButton::TabBar)
+            && self
+                .model
+                .text(button)
+                .is_some_and(|text| !text.is_empty())
+            && self.model.indent(button).is_none()
+    }
+
     pub(super) fn button_dimensions(
         &self,
         state: &mut LocalState,
@@ -2015,6 +2026,8 @@ where
         let bounds: Rectangle = layout.bounds();
         let button_amount = self.model.items.len();
         let show_drop_hint = state.dragging_tab.is_some();
+        let draw_inactive_indicator =
+            !matches!(self.style, crate::theme::SegmentedButton::TabBar);
         let drop_hint = if show_drop_hint {
             state.drop_hint
         } else {
@@ -2179,7 +2192,6 @@ where
             };
 
             let original_bounds = bounds;
-            let center_y = bounds.center_y();
 
             if show_drop_hint_marker
                 && matches!(
@@ -2207,7 +2219,15 @@ where
             let key_is_active = self.model.is_active(key);
             let key_is_focused = state.focused_visible && self.button_is_focused(state, key);
             let key_is_hovered = self.button_is_hovered(state, key);
-            let status_appearance = if self.button_is_pressed(state, key) {
+            let inactive_tab_gap = if !key_is_active
+                && matches!(self.style, crate::theme::SegmentedButton::TabBar)
+            {
+                f32::from(crate::theme::spacing().space_xxs)
+            } else {
+                0.0
+            };
+            let center_y = bounds.center_y() - inactive_tab_gap / 2.0;
+            let mut status_appearance = if self.button_is_pressed(state, key) {
                 appearance.pressed
             } else if key_is_hovered || menu_open() {
                 appearance.hover
@@ -2216,47 +2236,28 @@ where
             } else {
                 appearance.inactive
             };
+            if key_is_active && matches!(self.style, crate::theme::SegmentedButton::TabBar) {
+                status_appearance.text_color = appearance.active.text_color;
+            }
 
-            let button_appearance = if nth == 0 {
-                status_appearance.first
-            } else if nth + 1 == button_amount {
-                status_appearance.last
-            } else {
-                status_appearance.middle
-            };
-
-            // Draw the active hint on tabs
-            if appearance.active_width > 0.0 {
-                let active_width = if key_is_active {
-                    appearance.active_width
+            let item_appearance = |status: super::ItemStatusAppearance| -> super::ItemAppearance {
+                if nth == 0 {
+                    status.first
+                } else if nth + 1 == button_amount {
+                    status.last
                 } else {
-                    1.0
-                };
-
-                renderer.fill_quad(
-                    renderer::Quad {
-                        bounds: if Self::VERTICAL {
-                            Rectangle {
-                                x: bounds.x + bounds.width - active_width,
-                                width: active_width,
-                                ..bounds
-                            }
-                        } else {
-                            Rectangle {
-                                y: bounds.y + bounds.height - active_width,
-                                height: active_width,
-                                ..bounds
-                            }
-                        },
-                        border: Border {
-                            radius: rad_0.into(),
-                            ..Default::default()
-                        },
-                        shadow: Shadow::default(),
-                        snap: true,
-                    },
-                    appearance.active.text_color,
-                );
+                    status.middle
+                }
+            };
+            let mut button_appearance = item_appearance(status_appearance);
+            if !Self::VERTICAL && matches!(self.style, crate::theme::SegmentedButton::TabBar) {
+                // Keep hover and pressed colors while preserving selection-specific corners.
+                let shape_appearance = item_appearance(if key_is_active {
+                    appearance.active
+                } else {
+                    appearance.inactive
+                });
+                button_appearance.border.radius = shape_appearance.border.radius;
             }
 
             bounds.x += f32::from(self.button_padding[0]);
@@ -2304,15 +2305,18 @@ where
 
             // Render the background of the button.
             if key_is_focused || status_appearance.background.is_some() {
+                let mut background_bounds = Rectangle {
+                    x: bounds.x - f32::from(self.button_padding[0]) + indent_padding,
+                    width: bounds.width + f32::from(self.button_padding[0])
+                        - f32::from(self.button_padding[2])
+                        - indent_padding,
+                    ..bounds
+                };
+                background_bounds.height -= inactive_tab_gap;
+
                 renderer.fill_quad(
                     renderer::Quad {
-                        bounds: Rectangle {
-                            x: bounds.x - f32::from(self.button_padding[0]) + indent_padding,
-                            width: bounds.width + f32::from(self.button_padding[0])
-                                - f32::from(self.button_padding[2])
-                                - indent_padding,
-                            ..bounds
-                        },
+                        bounds: background_bounds,
                         border: if key_is_focused {
                             Border {
                                 width: 1.0,
@@ -2331,21 +2335,62 @@ where
                 );
             }
 
+            if appearance.active_width > 0.0 && (key_is_active || draw_inactive_indicator) {
+                let active_width = if key_is_active {
+                    appearance.active_width
+                } else {
+                    1.0
+                };
+                let active_hint_color =
+                    if matches!(self.style, crate::theme::SegmentedButton::TabBar) {
+                        Color::from(theme.cosmic().accent.base)
+                    } else {
+                        appearance.active.text_color
+                    };
+
+                renderer.fill_quad(
+                    renderer::Quad {
+                        bounds: if Self::VERTICAL {
+                            Rectangle {
+                                x: original_bounds.x + original_bounds.width - active_width,
+                                width: active_width,
+                                ..original_bounds
+                            }
+                        } else {
+                            Rectangle {
+                                y: original_bounds.y + original_bounds.height - active_width,
+                                height: active_width,
+                                ..original_bounds
+                            }
+                        },
+                        border: Border {
+                            radius: rad_0.into(),
+                            ..Default::default()
+                        },
+                        shadow: Shadow::default(),
+                        snap: true,
+                    },
+                    active_hint_color,
+                );
+            }
+
             // Align contents of the button to the requested `button_alignment`.
             {
-                // Avoid shifting content outside the left edge when the measured content is
-                // wider than the available button bounds (for example, non-ellipsized text).
-                let actual_width = state.internal_layout[nth].1.width.min(bounds.width);
+                if !self.centers_tab_title(key) {
+                    // Avoid shifting content outside the left edge when the measured content is
+                    // wider than the available button bounds (for example, non-ellipsized text).
+                    let actual_width = state.internal_layout[nth].1.width.min(bounds.width);
 
-                let offset = match self.button_alignment {
-                    Alignment::Start => None,
-                    Alignment::Center => Some((bounds.width - actual_width) / 2.0),
-                    Alignment::End => Some(bounds.width - actual_width),
-                };
+                    let offset = match self.button_alignment {
+                        Alignment::Start => None,
+                        Alignment::Center => Some((bounds.width - actual_width) / 2.0),
+                        Alignment::End => Some(bounds.width - actual_width),
+                    };
 
-                if let Some(offset) = offset {
-                    bounds.x += offset - f32::from(self.button_padding[0]);
-                    bounds.width = actual_width;
+                    if let Some(offset) = offset {
+                        bounds.x += offset - f32::from(self.button_padding[0]);
+                        bounds.width = actual_width;
+                    }
                 }
             }
 
@@ -2418,10 +2463,25 @@ where
                 0.0
             };
 
-            bounds.width = original_bounds.width
-                - (bounds.x - original_bounds.x)
-                - close_icon_width
-                - f32::from(self.button_padding[2]);
+            if self.centers_tab_title(key) {
+                let center_x = original_bounds.center_x();
+                let left = bounds.x;
+                let right = if show_close_button {
+                    close_bounds(original_bounds, close_icon_width).x
+                } else {
+                    original_bounds.x + original_bounds.width
+                        - f32::from(self.button_padding[2])
+                };
+                let half_width = (center_x - left).min(right - center_x).max(0.0);
+                let text_width = state.paragraphs[key].min_bounds().width.min(half_width * 2.0);
+                bounds.x = center_x - text_width / 2.0;
+                bounds.width = text_width;
+            } else {
+                bounds.width = original_bounds.width
+                    - (bounds.x - original_bounds.x)
+                    - close_icon_width
+                    - f32::from(self.button_padding[2]);
+            }
 
             bounds.y = center_y;
 

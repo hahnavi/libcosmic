@@ -79,7 +79,7 @@ impl StyleSheet for Theme {
                 ..horizontal::tab_bar(cosmic, container)
             },
 
-            SegmentedButton::TabBar => horizontal::tab_bar(cosmic, container),
+            SegmentedButton::TabBar => horizontal::pills(cosmic, container),
 
             SegmentedButton::Custom(func) => func(self),
         }
@@ -148,7 +148,64 @@ mod horizontal {
     use iced::Border;
     use iced_core::Background;
     use iced_core::border::Radius;
+    use iced_core::Color;
     use palette::WithAlpha;
+
+    pub fn pills(cosmic: &cosmic_theme::Theme, container: &Container) -> Appearance {
+        let radius_m = cosmic.corner_radii.radius_m;
+        let radius = radius_m.into();
+        let border = if cosmic.is_high_contrast {
+            Border {
+                color: container.component.border.into(),
+                radius,
+                width: 1.0,
+            }
+        } else {
+            Border {
+                radius,
+                ..Default::default()
+            }
+        };
+        let item = ItemAppearance { border };
+        let active_item = ItemAppearance {
+            border: Border {
+                radius: Radius::from([radius_m[0], radius_m[1], 0.0, 0.0]),
+                ..border
+            },
+        };
+        let inactive = ItemStatusAppearance {
+            background: Some(Background::Color(
+                cosmic.palette.neutral_5.with_alpha(0.08).into(),
+            )),
+            first: item,
+            middle: item,
+            last: item,
+            text_color: if cosmic.is_high_contrast {
+                container.component.on.into()
+            } else {
+                Color::from(container.component.on).scale_alpha(0.7)
+            },
+        };
+        let active = ItemStatusAppearance {
+            background: Some(Background::Color(
+                cosmic.palette.neutral_5.with_alpha(0.2).into(),
+            )),
+            text_color: cosmic.accent.base.into(),
+            first: active_item,
+            middle: active_item,
+            last: active_item,
+            ..inactive
+        };
+
+        Appearance {
+            active_width: 3.0,
+            inactive,
+            hover: super::hover(cosmic, &active, 0.3),
+            pressed: super::hover(cosmic, &active, 0.25),
+            active,
+            ..Default::default()
+        }
+    }
 
     pub fn tab_bar(cosmic: &cosmic_theme::Theme, container: &Container) -> Appearance {
         let active = tab_bar_active(cosmic);

@@ -1,7 +1,7 @@
 [submodule "iced"]
 	path = iced
 	url = https://github.com/hahnavi/iced.git
-	branch = master
+	branch = hahnavi
 [submodule "icon-theme"]
 	path = cosmic-icons
 	url = https://github.com/pop-os/cosmic-icons
