@@ -662,7 +662,7 @@ where
                     let handler = self.on_surface_action.as_ref();
                     close_innermost(state, &mut |id| {
                         if let Some(handler) = handler {
-                            shell.publish((handler)(crate::surface::action::destroy_popup(id)));
+                            shell.publish((handler)(crate::surface::Action::DestroyPopup(id)));
                         }
                     });
                 });

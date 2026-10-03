@@ -147,8 +147,8 @@ mod horizontal {
     use cosmic_theme::{Component, Container};
     use iced::Border;
     use iced_core::Background;
-    use iced_core::border::Radius;
     use iced_core::Color;
+    use iced_core::border::Radius;
     use palette::WithAlpha;
 
     pub fn pills(cosmic: &cosmic_theme::Theme, container: &Container) -> Appearance {

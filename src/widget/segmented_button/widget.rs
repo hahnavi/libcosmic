@@ -612,10 +612,7 @@ where
         !Self::VERTICAL
             && self.button_alignment == Alignment::Center
             && matches!(self.style, crate::theme::SegmentedButton::TabBar)
-            && self
-                .model
-                .text(button)
-                .is_some_and(|text| !text.is_empty())
+            && self.model.text(button).is_some_and(|text| !text.is_empty())
             && self.model.indent(button).is_none()
     }
 
@@ -2026,8 +2023,7 @@ where
         let bounds: Rectangle = layout.bounds();
         let button_amount = self.model.items.len();
         let show_drop_hint = state.dragging_tab.is_some();
-        let draw_inactive_indicator =
-            !matches!(self.style, crate::theme::SegmentedButton::TabBar);
+        let draw_inactive_indicator = !matches!(self.style, crate::theme::SegmentedButton::TabBar);
         let drop_hint = if show_drop_hint {
             state.drop_hint
         } else {
@@ -2219,13 +2215,12 @@ where
             let key_is_active = self.model.is_active(key);
             let key_is_focused = state.focused_visible && self.button_is_focused(state, key);
             let key_is_hovered = self.button_is_hovered(state, key);
-            let inactive_tab_gap = if !key_is_active
-                && matches!(self.style, crate::theme::SegmentedButton::TabBar)
-            {
-                f32::from(crate::theme::spacing().space_xxs)
-            } else {
-                0.0
-            };
+            let inactive_tab_gap =
+                if !key_is_active && matches!(self.style, crate::theme::SegmentedButton::TabBar) {
+                    f32::from(crate::theme::spacing().space_xxs)
+                } else {
+                    0.0
+                };
             let center_y = bounds.center_y() - inactive_tab_gap / 2.0;
             let mut status_appearance = if self.button_is_pressed(state, key) {
                 appearance.pressed
@@ -2469,11 +2464,13 @@ where
                 let right = if show_close_button {
                     close_bounds(original_bounds, close_icon_width).x
                 } else {
-                    original_bounds.x + original_bounds.width
-                        - f32::from(self.button_padding[2])
+                    original_bounds.x + original_bounds.width - f32::from(self.button_padding[2])
                 };
                 let half_width = (center_x - left).min(right - center_x).max(0.0);
-                let text_width = state.paragraphs[key].min_bounds().width.min(half_width * 2.0);
+                let text_width = state.paragraphs[key]
+                    .min_bounds()
+                    .width
+                    .min(half_width * 2.0);
                 bounds.x = center_x - text_width / 2.0;
                 bounds.width = text_width;
             } else {
