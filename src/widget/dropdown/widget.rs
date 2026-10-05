@@ -195,6 +195,7 @@ where
         for (i, selection) in self.selections.iter().enumerate() {
             let mut hasher = DefaultHasher::new();
             selection.as_ref().hash(&mut hasher);
+            iced_core::text::text_scale().to_bits().hash(&mut hasher);
             let text_hash = hasher.finish();
 
             if state.hashes[i] == text_hash {

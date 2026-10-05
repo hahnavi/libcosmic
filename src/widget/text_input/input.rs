@@ -670,6 +670,12 @@ where
             state.dirty = true;
         }
 
+        // Re-shape the cached paragraphs when the text scale changes.
+        if state.text_scale != iced_core::text::text_scale() {
+            state.text_scale = iced_core::text::text_scale();
+            state.dirty = true;
+        }
+
         if self.always_active && !state.is_focused() {
             let now = Instant::now();
             LAST_FOCUS_UPDATE.with(|x| x.set(now));
@@ -3089,6 +3095,7 @@ pub struct State {
     pub label: crate::Plain,
     pub helper_text: crate::Plain,
     pub dirty: bool,
+    text_scale: f32,
     pub is_secure: bool,
     pub is_read_only: bool,
     pub emit_unfocus: bool,
@@ -3199,6 +3206,7 @@ impl State {
             keyboard_modifiers: keyboard::Modifiers::default(),
             scroll_offset: 0.0,
             dirty: false,
+            text_scale: iced_core::text::text_scale(),
             context_menu_position: None,
             clipboard_has_text: false,
             menu_bar_state: crate::widget::menu::MenuBarState::default(),

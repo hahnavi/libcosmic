@@ -16,6 +16,13 @@ pub const ID: &str = "com.system76.CosmicTk";
 const MONO_FAMILY_DEFAULT: &str = "Noto Sans Mono";
 const SANS_FAMILY_DEFAULT: &str = "Open Sans";
 
+pub const FONT_SIZE_DEFAULT: f32 = 14.0;
+
+#[inline]
+pub(crate) fn apply_font_size(font_size: f32) {
+    iced::advanced::graphics::text::set_text_scale(font_size / FONT_SIZE_DEFAULT);
+}
+
 pub static COSMIC_TK: LazyLock<RwLock<CosmicTk>> = LazyLock::new(|| {
     RwLock::new(
         CosmicTk::config()
@@ -83,7 +90,12 @@ pub fn monospace_font() -> FontConfig {
     COSMIC_TK.read().unwrap().monospace_font.clone()
 }
 
-#[derive(Clone, CosmicConfigEntry, Debug, Eq, PartialEq)]
+#[allow(clippy::missing_panics_doc)]
+pub fn font_size() -> f32 {
+    COSMIC_TK.read().unwrap().font_size
+}
+
+#[derive(Clone, CosmicConfigEntry, Debug, PartialEq)]
 #[version = 1]
 pub struct CosmicTk {
     /// Apply the theme to other toolkits.
@@ -109,6 +121,9 @@ pub struct CosmicTk {
 
     /// Mono font family
     pub monospace_font: FontConfig,
+
+    /// The system font size, in pixels.
+    pub font_size: f32,
 }
 
 impl Default for CosmicTk {
@@ -132,6 +147,7 @@ impl Default for CosmicTk {
                 stretch: iced::font::Stretch::Normal,
                 style: iced::font::Style::Normal,
             },
+            font_size: FONT_SIZE_DEFAULT,
         }
     }
 }

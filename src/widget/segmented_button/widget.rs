@@ -276,6 +276,7 @@ where
             let mut hasher = DefaultHasher::new();
             text.hash(&mut hasher);
             font.hash(&mut hasher);
+            iced_core::text::text_scale().to_bits().hash(&mut hasher);
             let text_hash = hasher.finish();
 
             if let Some(prev_hash) = state.text_hashes.insert(key, text_hash)

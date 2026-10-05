@@ -1391,6 +1391,8 @@ impl<T: Application> Cosmic<T> {
                     crate::icon_theme::set_default(config.icon_theme.clone());
                 }
 
+                crate::config::apply_font_size(config.font_size);
+
                 *crate::config::COSMIC_TK.write().unwrap() = config;
             }
 

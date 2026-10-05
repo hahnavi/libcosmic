@@ -33,6 +33,8 @@ pub(crate) fn iced_settings<App: Application>(
     settings: Settings,
     flags: App::Flags,
 ) -> (iced::Settings, (Core, App::Flags), iced::window::Settings) {
+    crate::config::apply_font_size(crate::config::font_size());
+
     preload_fonts(settings.default_font);
 
     let mut core = Core::default();
