@@ -46,27 +46,3 @@ pub fn set_windowed<M>(id: window::Id) -> iced::Task<crate::Action<M>> {
 pub fn toggle_maximize<M>(id: window::Id) -> iced::Task<crate::Action<M>> {
     iced_runtime::window::toggle_maximize(id)
 }
-
-#[cfg(xdg_portal)]
-pub fn file_transfer_send(
-    writeable: bool,
-    auto_stop: bool,
-    files: Vec<impl AsFd + Send + Sync + 'static>,
-) -> iced::Task<ashpd::Result<String>> {
-    iced::Task::future(async move {
-        let file_transfer = ashpd::documents::FileTransfer::new().await?;
-        let key = file_transfer.start_transfer(writeable, auto_stop).await?;
-        file_transfer.add_files(&key, &files).await?;
-        Ok(key)
-    })
-}
-
-/// Receive the files offered over the xdg share portal using the `key`.
-/// Returns a list of file paths.
-#[cfg(xdg_portal)]
-pub fn file_transfer_receive(key: String) -> iced::Task<ashpd::Result<Vec<String>>> {
-    iced::Task::future(async move {
-        let file_transfer = ashpd::documents::FileTransfer::new().await?;
-        file_transfer.retrieve_files(&key).await
-    })
-}

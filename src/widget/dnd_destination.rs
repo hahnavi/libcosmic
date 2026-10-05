@@ -237,8 +237,8 @@ impl<'a, Message: 'static> DndDestination<'a, Message> {
     }
 
     /// Add a message that will be emitted instead of [`on_data_received`](Self::on_data_received) if the dropped files
-    /// are offered through the xdg share portal. You can then use [`crate::command::file_transfer_receive`]
-    /// with the key to receive the files.
+    /// are offered through the xdg share portal. You can then use the key to receive the files
+    /// over the document portal.
     #[cfg(xdg_portal)]
     #[must_use]
     pub fn on_file_transfer(mut self, f: impl Fn(String) -> Message + 'static) -> Self {

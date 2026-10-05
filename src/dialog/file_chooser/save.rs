@@ -146,7 +146,6 @@ impl Default for Dialog {
 mod portal {
     use super::Dialog;
     use crate::dialog::file_chooser::Error;
-    use ashpd::desktop::file_chooser::SelectedFiles;
     use std::path::Path;
     use url::Url;
 
@@ -170,19 +169,22 @@ mod portal {
             .map_err(Error::Save)?
             .response()
             .map_err(Error::Save)
-            .map(Response)
+            .map(|selected| {
+                Response(
+                    selected
+                        .uris()
+                        .first()
+                        .and_then(|uri| Url::parse(uri.as_str()).ok()),
+                )
+            })
     }
 
     /// A dialog response containing the selected file or folder.
-    pub struct Response(pub SelectedFiles);
+    pub struct Response(Option<Url>);
 
     impl Response {
-        pub fn choices(&self) -> &[(String, String)] {
-            self.0.choices()
-        }
-
         pub fn url(&self) -> Option<&Url> {
-            self.0.uris().first()
+            self.0.as_ref()
         }
     }
 }

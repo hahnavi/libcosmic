@@ -187,8 +187,13 @@ mod portal {
     ) -> Result<FileResponse, Error> {
         request
             .response()
-            .map(FileResponse)
             .map_err(error_or_cancel)
+            .map(|selected| {
+                FileResponse(
+                    Url::parse(selected.uris().first().expect("no files selected").as_str())
+                        .expect("invalid URI returned by the file chooser portal"),
+                )
+            })
     }
 
     fn multi_file_response(
@@ -196,8 +201,19 @@ mod portal {
     ) -> Result<MultiFileResponse, Error> {
         request
             .response()
-            .map(MultiFileResponse)
             .map_err(error_or_cancel)
+            .map(|selected| {
+                MultiFileResponse(
+                    selected
+                        .uris()
+                        .iter()
+                        .map(|uri| {
+                            Url::parse(uri.as_str())
+                                .expect("invalid URI returned by the file chooser portal")
+                        })
+                        .collect(),
+                )
+            })
     }
 
     pub async fn file(dialog: Dialog) -> Result<FileResponse, Error> {
@@ -217,28 +233,28 @@ mod portal {
     }
 
     /// A dialog response containing the selected file or folder.
-    pub struct FileResponse(pub SelectedFiles);
+    pub struct FileResponse(Url);
 
     impl FileResponse {
         pub fn choices(&self) -> &[(String, String)] {
-            self.0.choices()
+            &[]
         }
 
         pub fn url(&self) -> &Url {
-            self.0.uris().first().expect("no files selected")
+            &self.0
         }
     }
 
     /// A dialog response containing the selected file(s) or folder(s).
-    pub struct MultiFileResponse(pub SelectedFiles);
+    pub struct MultiFileResponse(Vec<Url>);
 
     impl MultiFileResponse {
         pub fn choices(&self) -> &[(String, String)] {
-            self.0.choices()
+            &[]
         }
 
         pub fn urls(&self) -> &[Url] {
-            self.0.uris()
+            &self.0
         }
     }
 }
