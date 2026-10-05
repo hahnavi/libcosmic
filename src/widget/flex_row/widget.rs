@@ -60,9 +60,9 @@ impl<'a, Message> FlexRow<'a, Message> {
     /// Defines how content will be aligned horizontally.
     pub fn align_items(mut self, alignment: iced::Alignment) -> Self {
         self.align_items = Some(match alignment {
-            iced::Alignment::Center => taffy::AlignItems::Center,
-            iced::Alignment::Start => taffy::AlignItems::Start,
-            iced::Alignment::End => taffy::AlignItems::End,
+            iced::Alignment::Center => taffy::AlignItems::CENTER,
+            iced::Alignment::Start => taffy::AlignItems::START,
+            iced::Alignment::End => taffy::AlignItems::END,
         });
         self
     }
@@ -70,9 +70,9 @@ impl<'a, Message> FlexRow<'a, Message> {
     /// Defines how content will be aligned vertically.
     pub fn justify_items(mut self, alignment: iced::Alignment) -> Self {
         self.justify_items = Some(match alignment {
-            iced::Alignment::Center => taffy::AlignItems::Center,
-            iced::Alignment::Start => taffy::AlignItems::Start,
-            iced::Alignment::End => taffy::AlignItems::End,
+            iced::Alignment::Center => taffy::AlignItems::CENTER,
+            iced::Alignment::Start => taffy::AlignItems::START,
+            iced::Alignment::End => taffy::AlignItems::END,
         });
         self
     }

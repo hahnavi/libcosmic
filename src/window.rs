@@ -21,13 +21,14 @@ pub fn identifier(id: window::Id) -> Task<Option<crate::dialog::ashpd::WindowIde
 
 #[cfg(all(xdg_portal, wayland_platform))]
 fn identifier_wayland(id: window::Id) -> Task<Option<crate::dialog::ashpd::WindowIdentifier>> {
-    use crate::iced::window::raw_window_handle::{
-        HasDisplayHandle, HasWindowHandle, RawDisplayHandle, RawWindowHandle,
-    };
+    use crate::iced::window::raw_window_handle::{HasDisplayHandle, RawDisplayHandle};
+    #[cfg(feature = "x11")]
+    use crate::iced::window::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
     #[derive(Clone, Copy)]
     enum Display {
         Wayland,
+        #[cfg(feature = "x11")]
         X11(u64),
         Unsupported,
     }
@@ -39,11 +40,17 @@ fn identifier_wayland(id: window::Id) -> Task<Option<crate::dialog::ashpd::Windo
             return Display::Wayland;
         }
 
-        match window.window_handle().map(|handle| handle.as_raw()) {
-            Ok(RawWindowHandle::Xlib(window)) => Display::X11(window.window as u64),
-            Ok(RawWindowHandle::Xcb(window)) => Display::X11(window.window.get().into()),
-            _ => Display::Unsupported,
+        #[cfg(feature = "x11")]
+        {
+            match window.window_handle().map(|handle| handle.as_raw()) {
+                Ok(RawWindowHandle::Xlib(window)) => Display::X11(window.window as u64),
+                Ok(RawWindowHandle::Xcb(window)) => Display::X11(window.window.get().into()),
+                _ => Display::Unsupported,
+            }
         }
+
+        #[cfg(not(feature = "x11"))]
+        Display::Unsupported
     })
     .then(move |display| match display {
         Display::Wayland => iced_winit::platform_specific::commands::dialog::window_surface(id)
@@ -57,6 +64,7 @@ fn identifier_wayland(id: window::Id) -> Task<Option<crate::dialog::ashpd::Windo
                     }
                 })
             }),
+        #[cfg(feature = "x11")]
         Display::X11(xid) => crate::task::future(async move {
             Some(crate::dialog::ashpd::WindowIdentifier::from_xid(xid))
         }),
