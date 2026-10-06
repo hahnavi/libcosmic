@@ -1,5 +1,5 @@
 //! Distribute content vertically.
-use super::menu_inner::{MENU_ITEM_MARGIN_Y, MENU_ITEM_SPACING};
+use super::menu_inner::MENU_ITEM_SPACING;
 use crate::iced;
 use iced::core::alignment::{self, Alignment};
 use iced::core::event::{self, Event};
@@ -209,18 +209,7 @@ where
 
             let remaining = (max_height - cursor).max(0.0);
             let child_limits = layout::Limits::new(Size::ZERO, Size::new(inner_width, remaining));
-            let mut node = child.as_widget_mut().layout(state, renderer, &child_limits);
-
-            let natural = node.size().height;
-            if natural > 2.0 * MENU_ITEM_MARGIN_Y {
-                let clamped_limits = layout::Limits::new(
-                    Size::ZERO,
-                    Size::new(inner_width, natural - 2.0 * MENU_ITEM_MARGIN_Y),
-                );
-                node = child
-                    .as_widget_mut()
-                    .layout(state, renderer, &clamped_limits);
-            }
+            let node = child.as_widget_mut().layout(state, renderer, &child_limits);
 
             let x = match self.align {
                 Alignment::Start => 0.0,

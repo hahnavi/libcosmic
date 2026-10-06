@@ -448,14 +448,7 @@ where
 
     fn option_height(&self, renderer: &crate::Renderer) -> f32 {
         let text_size = self.resolved_text_size(renderer);
-        let natural =
-            f32::from(self.text_line_height.to_absolute(Pixels(text_size))) + self.padding.y();
-
-        if natural > 2.0 * MENU_ITEM_MARGIN_Y {
-            natural - 2.0 * MENU_ITEM_MARGIN_Y
-        } else {
-            natural
-        }
+        f32::from(self.text_line_height.to_absolute(Pixels(text_size))) + self.padding.y()
     }
 
     fn option_at(&self, renderer: &crate::Renderer, y: f32) -> Option<usize> {

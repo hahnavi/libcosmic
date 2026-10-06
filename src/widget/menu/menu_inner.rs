@@ -24,17 +24,16 @@ use iced_widget::core::{
 
 pub(crate) const MENU_ITEM_MARGIN_X: f32 = 4.0;
 pub(crate) const MENU_ITEM_MARGIN_Y: f32 = 4.0;
-pub(crate) const MENU_ITEM_SPACING: f32 = 4.0;
+pub(crate) const MENU_ITEM_SPACING: f32 = 0.0;
 
-/// Size of an item widget inside the menu panel. Short rows (e.g. 1px
-/// dividers) keep their height and are only inset horizontally.
+/// Size of an item widget inside the menu panel. Items are inset
+/// horizontally from the panel edges and span their full natural height, so
+/// rows sit flush against each other.
 fn inset_item_size(size: Size) -> Size {
-    let width = (size.width - 2.0 * MENU_ITEM_MARGIN_X).max(0.0);
-    if size.height > 2.0 * MENU_ITEM_MARGIN_Y {
-        Size::new(width, size.height - 2.0 * MENU_ITEM_MARGIN_Y)
-    } else {
-        Size::new(width, size.height)
-    }
+    Size::new(
+        (size.width - 2.0 * MENU_ITEM_MARGIN_X).max(0.0),
+        size.height,
+    )
 }
 
 /// The condition of when to close a menu
@@ -1334,7 +1333,7 @@ pub(crate) fn init_root_menu<Message: Clone>(
                     &aod,
                     menu.bounds_expand,
                     root_bounds,
-                    &mut state.tree.children[0].children,
+                    &mut state.tree.children[i].children,
                     menu.is_overlay,
                 );
                 state.active_root.push(i);
@@ -1405,8 +1404,9 @@ pub(super) fn init_root_popup_menu<Message>(
             &aod,
             menu.bounds_expand,
             root_bounds,
-            // TODO how to select the tree for the popup
-            &mut state.tree.children[0].children,
+            // Every item indexes into the bar root's flat tree list, regardless
+            // of the submenu depth.
+            &mut state.tree.children[active_roots[0]].children,
             menu.is_overlay,
         );
 
@@ -1868,8 +1868,8 @@ fn get_children_layout<Message>(
             .collect(),
     };
 
-    // Inset each item from the panel edges and leave a gap between rows, so the
-    // vertical rhythm matches the `MenuColumn` used by context menus.
+    // Inset each item from the panel edges, keeping rows flush against each
+    // other; `MENU_ITEM_MARGIN_Y` only pads the top and bottom of the panel.
     let mut child_positions = Vec::with_capacity(natural_sizes.len());
     let mut child_sizes = Vec::with_capacity(natural_sizes.len());
     let mut cursor = MENU_ITEM_MARGIN_Y;

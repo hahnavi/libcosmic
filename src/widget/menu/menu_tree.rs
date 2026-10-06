@@ -149,8 +149,8 @@ where
             .height(Length::Fill)
             .width(Length::Fill),
     )
-    .height(Length::Fixed(36.0))
-    .padding([0, 16])
+    .height(Length::Shrink)
+    .padding([3, 16])
     .width(Length::Fill)
     .class(theme::Button::MenuItem)
 }
@@ -275,7 +275,7 @@ where
     Message: std::clone::Clone + 'a,
 {
     widget::button::custom(widget::text(label))
-        .padding([4, 12])
+        .padding([4, 8])
         .class(theme::Button::MenuRoot)
 }
 
@@ -461,7 +461,9 @@ pub fn menu_items<
                     // A divider at either end separates nothing
                     if i != 0 && i != size - 1 {
                         trees.push(MenuTree::<Message>::from(Element::from(
-                            widget::divider::horizontal::light(),
+                            widget::container(widget::divider::horizontal::light())
+                                .padding([4, 0])
+                                .width(Length::Fill),
                         )));
                     }
                 }
