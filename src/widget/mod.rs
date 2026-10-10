@@ -257,6 +257,10 @@ pub mod nav_bar_toggle;
 #[doc(inline)]
 pub use nav_bar_toggle::{NavBarToggle, nav_bar_toggle};
 
+pub mod resize_handle;
+#[doc(inline)]
+pub use resize_handle::{HANDLE_WIDTH, ResizeHandle, resize_handle};
+
 pub mod popover;
 #[doc(inline)]
 pub use popover::{Popover, popover};

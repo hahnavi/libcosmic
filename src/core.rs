@@ -212,6 +212,17 @@ impl Default for Core {
 }
 
 impl Core {
+    /// Resolved inset used around window content and navigation chrome.
+    #[must_use]
+    #[inline]
+    pub const fn window_border_padding(&self) -> u16 {
+        match self.window.border_padding {
+            Some(padding) => padding,
+            None if self.window.is_maximized => 8,
+            None => 7,
+        }
+    }
+
     /// Whether the window is too small for the nav bar + main content.
     #[must_use]
     #[inline]

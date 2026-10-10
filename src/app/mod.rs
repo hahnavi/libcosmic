@@ -420,6 +420,42 @@ where
         None
     }
 
+    /// Sets the outer padding around the navigation bar in `[top, right, bottom, left]` order.
+    fn nav_bar_padding(&self, border_padding: u16) -> [u16; 4] {
+        [
+            0,
+            if self.core().is_condensed() {
+                border_padding
+            } else {
+                8
+            },
+            border_padding,
+            border_padding,
+        ]
+    }
+
+    /// The width of the resizable nav bar.
+    /// Set to render at this width with a drag handle; [`Application::on_nav_bar_resize`]
+    /// is called while dragging.
+    fn nav_bar_width(&self) -> Option<f32> {
+        None
+    }
+
+    /// Called with the proposed width while the user drags the nav bar resize handle.
+    fn on_nav_bar_resize(&mut self, _width: f32) -> Task<Self::Message> {
+        Task::none()
+    }
+
+    /// Called when the user releases the nav bar resize handle.
+    fn on_nav_bar_resize_end(&mut self) -> Task<Self::Message> {
+        Task::none()
+    }
+
+    /// Called when the navigation bar visibility is toggled.
+    fn on_nav_bar_toggle(&mut self) -> Task<Self::Message> {
+        Task::none()
+    }
+
     /// Called before closing the application. Returning a message will override closing windows.
     fn on_app_exit(&mut self) -> Option<Self::Message> {
         None
@@ -629,13 +665,13 @@ impl<App: Application> ApplicationExt for App {
             .iter()
             .any(|i| Some(*i) == core.main_window_id());
 
-        let border_padding = core
-            .window
-            .border_padding
-            .unwrap_or(if maximized { 8 } else { 7 });
+        let border_padding = core.window_border_padding();
 
         let nav_bar_element = self.nav_bar();
         let has_nav = nav_bar_element.is_some();
+        // Apps can disable the content container to remove its default insets
+        // while still needing a window surface behind their navigation area.
+        let paint_window_background = content_container || self.nav_model().is_some();
         let nav_bar_min_width = if content_container {
             f32::from(border_padding)
         } else {
@@ -657,20 +693,50 @@ impl<App: Application> ApplicationExt for App {
             // Insert nav bar onto the left side of the window.
             if let Some(nav) = nav_bar_element {
                 let nav = id_container(nav, iced_core::id::Id::new("COSMIC_nav_bar"));
-                let nav = container(nav).padding([
-                    0,
-                    if is_condensed { border_padding } else { 8 },
-                    border_padding,
-                    border_padding,
-                ]);
+                let nav = container(nav).padding(self.nav_bar_padding(border_padding));
 
-                widgets.push(
+                let nav_bar_width = if is_condensed {
+                    None
+                } else {
+                    self.nav_bar_width()
+                };
+
+                let slide = if let Some(bar_width) = nav_bar_width {
+                    let content = crate::widget::row::with_children(vec![
+                        nav.into(),
+                        crate::widget::resize_handle(
+                            bar_width,
+                            |width| crate::Action::Cosmic(Action::NavBarResize(width)),
+                            crate::Action::Cosmic(Action::NavBarResizeEnd),
+                        )
+                        .into(),
+                    ])
+                    .width(Length::Fill);
+
+                    crate::widget::slide::Slide::new(content, nav_bar_open, nav_bar_animating)
+                        .width(bar_width)
+                        .min_width(nav_bar_min_width)
+                } else {
                     crate::widget::slide::Slide::new(nav, nav_bar_open, nav_bar_animating)
                         .min_width(nav_bar_min_width)
-                        .into(),
-                );
+                };
+
+                widgets.push(slide.into());
             } else {
                 widgets.push(space::horizontal().width(Length::Shrink).into());
+            }
+
+            if !content_container && self.nav_model().is_some() {
+                widgets.push(
+                    crate::widget::slide::Slide::new(
+                        space::horizontal().width(Length::Fill),
+                        !nav_bar_open,
+                        nav_bar_animating,
+                    )
+                    .width(f32::from(border_padding))
+                    .min_width(0.0)
+                    .into(),
+                );
             }
 
             if self.nav_model().is_none() || core.show_content() {
@@ -702,7 +768,12 @@ impl<App: Application> ApplicationExt for App {
                                 ))
                             })
                             .apply(container)
-                            .padding([0, if content_container { border_padding } else { 0 }, 0, 0])
+                            .padding([
+                                0,
+                                if content_container { border_padding } else { 0 },
+                                0,
+                                main_content_padding[3],
+                            ])
                             .apply(Element::from)
                             .map(crate::Action::App),
                         );
@@ -839,7 +910,7 @@ impl<App: Application> ApplicationExt for App {
                         header = header.end(element.map(crate::Action::App));
                     }
 
-                    if content_container {
+                    if paint_window_background {
                         header.apply(|w| id_container(w, iced_core::id::Id::new("COSMIC_header")))
                     } else {
                         // Needed to avoid header bar corner gaps for apps without a content container
@@ -876,7 +947,7 @@ impl<App: Application> ApplicationExt for App {
             .padding(if maximized { 0 } else { 1 })
             .class(crate::theme::Container::custom(move |theme| {
                 container::Style {
-                    background: if content_container {
+                    background: if paint_window_background {
                         Some(iced::Background::Color(
                             theme.cosmic().background(theme.transparent).base.into(),
                         ))

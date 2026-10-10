@@ -899,7 +899,11 @@ impl<T: Application> Cosmic<T> {
             }
 
             Action::ContextDrawerAnimationFinished => {
+                let closing = !self.app.core().context_drawer_open();
                 self.app.core_mut().finish_context_animation();
+                if closing {
+                    return self.app.on_context_drawer();
+                }
             }
 
             Action::Drag => return self.app.core().drag(None),
@@ -919,15 +923,29 @@ impl<T: Application> Cosmic<T> {
             }
 
             Action::NavBarAnimationFinished => {
+                let closing = !self.app.core().nav_bar_open();
                 self.app.core_mut().finish_nav_bar_animation();
+                if closing {
+                    return self.app.on_nav_bar_toggle();
+                }
+            }
+
+            Action::NavBarResize(width) => {
+                return self.app.on_nav_bar_resize(width);
+            }
+
+            Action::NavBarResizeEnd => {
+                return self.app.on_nav_bar_resize_end();
             }
 
             Action::ToggleNavBar => {
                 self.app.core_mut().nav_bar_toggle();
+                return self.app.on_nav_bar_toggle();
             }
 
             Action::ToggleNavBarCondensed => {
                 self.app.core_mut().nav_bar_toggle_condensed();
+                return self.app.on_nav_bar_toggle();
             }
 
             Action::AppThemeChange(mut theme) => {

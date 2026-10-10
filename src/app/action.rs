@@ -40,6 +40,10 @@ pub enum Action {
     NavBarContext(nav_bar::Id),
     /// Finalizes the nav bar animation once it is over.
     NavBarAnimationFinished,
+    /// Resizes the nav bar to the given width, in logical pixels.
+    NavBarResize(f32),
+    /// Finalizes a nav bar resize once the drag is over.
+    NavBarResizeEnd,
     /// A new window was opened.
     Opened(iced::window::Id),
     /// Set scaling factor
